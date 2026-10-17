@@ -1,0 +1,7 @@
+# Derived from the EU Agri Hackathon dataset: the Terms forbid publishing it.
+# Rebuild locally with: python3 scripts/build_data.py
+web/data/farm.json
+web/data/weather.json
+web/data/forecast_snapshot.json
+__pycache__/
+.DS_Store

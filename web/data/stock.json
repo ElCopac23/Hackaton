@@ -1,0 +1,31 @@
+{
+  "_note": "SIMULATED opening stock on 17 Oct 2026, set by the PM from the farm's typical use. Product names come from the farm's own 2026 records (fictitious names in the synthetic dataset); fertiliser products are simulated because the records hold only N, P and K rates.",
+  "products": [
+    {"id": "npk-15-15-15", "name": "NPK 15-15-15 (complex)", "type": "FERTILISER", "unit": "kg", "stock": 3000,
+     "composition": {"n": 15, "p2o5": 15, "k2o": 15},
+     "aliases": ["npk 15-15-15", "15-15-15", "complex fertiliser", "complex fertilizer", "complex", "compound", "npk"]},
+    {"id": "an-33-5", "name": "Ammonium nitrate 33.5", "type": "FERTILISER", "unit": "kg", "stock": 2500,
+     "composition": {"n": 33.5, "p2o5": 0, "k2o": 0},
+     "aliases": ["ammonium nitrate", "nitrate", "an 33"]},
+    {"id": "seed-cowt", "name": "Wheat seed COWT-V24", "type": "SEED", "crop": "COWT", "unit": "kg", "stock": 4200,
+     "aliases": ["wheat seed", "cowt-v24"]},
+    {"id": "seed-barl", "name": "Barley seed BARL-V15", "type": "SEED", "crop": "BARL", "unit": "kg", "stock": 4500,
+     "aliases": ["barley seed", "barl-v15"]},
+    {"id": "seed-rape", "name": "Rapeseed seed RAPE-V16", "type": "SEED", "crop": "RAPE", "unit": "kg", "stock": 80,
+     "aliases": ["rapeseed seed", "rape seed", "rape-v16"]},
+    {"id": "nuvexa-137", "name": "Nuvexa 137", "type": "HERBICIDE", "unit": "L", "stock": 25, "active_substance": "AS-HER-19",
+     "aliases": ["nuvexa 137"]},
+    {"id": "cropzen-391", "name": "Cropzen 391", "type": "HERBICIDE", "unit": "L", "stock": 30, "active_substance": "AS-HER-19",
+     "aliases": ["cropzen 391"]},
+    {"id": "solvex-837", "name": "Solvex 837", "type": "HERBICIDE", "unit": "L", "stock": 15, "active_substance": "AS-HER-14",
+     "aliases": ["solvex 837"]},
+    {"id": "nuvexa-434", "name": "Nuvexa 434", "type": "FUNGICIDE", "unit": "L", "stock": 12, "active_substance": "AS-FUN-11",
+     "aliases": ["nuvexa 434"]},
+    {"id": "agristar-524", "name": "Agristar 524", "type": "FUNGICIDE", "unit": "L", "stock": 10, "active_substance": "AS-FUN-07",
+     "aliases": ["agristar 524"]},
+    {"id": "solvex-520", "name": "Solvex 520", "type": "INSECTICIDE", "unit": "L", "stock": 4, "active_substance": "AS-INS-09",
+     "aliases": ["solvex 520"]},
+    {"id": "protexa-309", "name": "Protexa 309", "type": "INSECTICIDE", "unit": "L", "stock": 3, "active_substance": "AS-INS-01",
+     "aliases": ["protexa 309"]}
+  ]
+}

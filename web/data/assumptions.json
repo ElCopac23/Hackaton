@@ -1,0 +1,31 @@
+{
+  "_note": "Demo assumptions set by the PM. Weather thresholds and work rates are rules of thumb, to be confirmed by an adviser. Nothing here comes from the dataset.",
+  "autumn_plan": {
+    "season": 2027,
+    "crops": ["RAPE", "BARL", "COWT"],
+    "steps": [
+      {"key": "fertilise", "type": "fertilisation", "op": "spreading", "label": "Base fertiliser",
+       "product": "npk-15-15-15", "rate": 100, "unit": "kg/ha"},
+      {"key": "sow", "type": "sowing", "op": "sowing", "label": "Sowing",
+       "product_by_crop": {"COWT": "seed-cowt", "BARL": "seed-barl", "RAPE": "seed-rape"},
+       "rate": "history_median", "unit": "kg/ha"},
+      {"key": "spray", "type": "spraying", "op": "spraying", "label": "Post-sowing herbicide",
+       "product_by_crop": {"COWT": "nuvexa-137", "BARL": "cropzen-391", "RAPE": "solvex-837"},
+       "rate": 1.0, "unit": "L/ha"}
+    ]
+  },
+  "thresholds": {
+    "harvest":   {"max_rain_mm": 1, "max_rain_prob": 50},
+    "spreading": {"max_rain_mm": 5, "max_wind_kmh": 25},
+    "sowing":    {"max_rain_mm": 2, "max_rain_prev2_mm": 10},
+    "spraying":  {"max_rain_mm": 1, "max_rain_prob": 40, "max_wind_kmh": 19}
+  },
+  "capacity_ha_per_day": {"harvest": 10, "spreading": 40, "sowing": 15, "spraying": 40},
+  "nitrogen_band_pct": 10,
+  "wet_autumn_dry_days": 10,
+  "simulated_notes": [
+    {"date": "2026-10-15", "parcel": "PARCEL-0005183", "kind": "Field visit", "text": "Maize still standing, cobs drying. Check moisture before harvest."},
+    {"date": "2026-10-14", "parcel": null, "kind": "Machinery", "text": "Seed drill serviced, coulters replaced."},
+    {"date": "2026-10-10", "parcel": "PARCEL-0005182", "kind": "Inspection", "text": "Stubble cultivated, seedbed fine. Ready for base fertiliser."}
+  ]
+}

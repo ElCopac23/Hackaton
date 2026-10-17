@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Field Assistant · Farm home</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#2E6B4F"/>
+        <path d="M7 22c4-1 7-4 9-9m-9 13c6-1 11-5 13-12m-13 16c8-1 14-6 17-15" stroke="#F4F2EC" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div><div class="brand-name">Field Assistant</div><div class="brand-sub">Record once. Know what to do next.</div></div>
+    </div>
+    <div class="farm-chip">
+      <span id="farm-line">Loading…</span>
+      <span class="tag tag-synthetic" title="Farm records come from the EU Agri Hackathon synthetic dataset. Not a real farm.">Synthetic data</span>
+    </div>
+    <div class="top-right">
+      <span class="today" id="today"></span>
+      <span class="log-count" id="log-count"></span>
+      <button class="btn ghost" id="reset" data-action="reset" hidden>Reset demo</button>
+      <button class="btn primary" data-action="log">🎙 Log activity</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Farm overview"></nav>
+    <main id="main" class="main"><div class="loading">Loading farm data…</div></main>
+  </div>
+
+  <aside id="drawer" class="drawer" aria-label="Field details"></aside>
+  <div id="capture" class="modal" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <footer class="footer">
+    <b>Data sources.</b>
+    Farm records: EU Agri Hackathon synthetic dataset (not a real farm, do not redistribute).
+    Regional weather history: AgERA5 reanalysis (Copernicus licence), via the dataset.
+    Regional nitrogen reference: NPKGRIDS (CC BY 4.0), via the dataset.
+    Forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), snapshot.
+    Simulated for the demo: opening stock, autumn plan, field notes, NDVI.
+    Advice is rule-based; thresholds are rules of thumb to be confirmed by an adviser.
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
