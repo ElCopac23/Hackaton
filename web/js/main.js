@@ -1,19 +1,28 @@
 import { fmtLongDate, fmt, esc, shortId } from './util.js';
 import {
-  sidebar, homeView, weatherView, activitiesView, ndviView, lastView, recsView, inventoryView, fieldDrawer,
+  sidebar, homeView, weatherView, activitiesView, ndviView, recsView, inventoryView, economicsView, notesView,
+  fieldDrawer, farmMenu, sourcesSheet,
 } from './views.js';
+import { icon } from './icons.js';
 import { createCapture } from './capture.js';
+import { createOnboarding } from './onboarding.js';
 import { zoomView, clampView, viewBoxOf } from './map.js';
 import { EMPTY_FILTER } from './rules.js';
 import { connectSync, resizePhoto } from './sync.js';
 import { today } from './model.js';
+import {
+  listFarms, savedFarm, rememberFarm, loadFarm, sharedFor, completeness,
+} from './farms.js';
+import { scenarioOut, roiBox, actionsTable } from './econ-views.js';
+import { setupTooltips } from './tooltip.js';
 
 // Identifies this open page, so it does not announce its own changes as news.
 const CLIENT = Math.random().toString(36).slice(2, 10);
 let sync = null;
+let farmIndex = null;
 const VIEWS = {
   home: homeView, weather: weatherView, activities: activitiesView, ndvi: ndviView,
-  last: lastView, recs: recsView, inventory: inventoryView,
+  recs: recsView, inventory: inventoryView, economics: economicsView, notes: notesView,
 };
 
 const app = {
@@ -22,17 +31,10 @@ const app = {
   device: 'web',
 };
 
-async function loadJson(name) {
-  const res = await fetch(`data/${name}.json`, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`data/${name}.json: ${res.status}. Run scripts/build_data.py first.`);
-  return res.json();
-}
+const farmId = () => app.state.farm.meta.holding_id;
 
 function applyShared(next) {
-  const s = app.state;
-  s.captured = next.captured || [];
-  s.stockAdjust = next.stockAdjust || {};
-  s.notes = next.notes || [];
+  Object.assign(app.state, sharedFor(next, farmId()));
 }
 
 function setLive(status) {
@@ -41,16 +43,17 @@ function setLive(status) {
   const text = { live: 'Live', reconnecting: 'Reconnecting…', local: 'Not shared' }[status];
   el.className = `live live-${status}`;
   el.textContent = text;
-  el.title = status === 'local' ? 'No sync server: records stay in this browser. Start scripts/server.py to share with the phone.' : 'Changes from the phone app appear here in real time.';
+  el.dataset.tip = status === 'local' ? 'No sync server: records stay in this browser. Start scripts/server.py to share with the phone.' : 'Changes from the phone app appear here in real time.';
 }
 
 // Something changed on another device: show it, flash the fields and mark the updated advice.
 function onRemote(next) {
   const s = app.state;
+  const mine = sharedFor(next, farmId());
   const knownEvents = new Set(s.captured.map((e) => e.id));
   const knownNotes = new Set((s.notes || []).map((n) => n.id));
-  const newEvents = (next.captured || []).filter((e) => !knownEvents.has(e.id) && e.client !== CLIENT);
-  const newNotes = (next.notes || []).filter((n) => !knownNotes.has(n.id) && n.client !== CLIENT);
+  const newEvents = mine.captured.filter((e) => !knownEvents.has(e.id) && e.client !== CLIENT);
+  const newNotes = mine.notes.filter((n) => !knownNotes.has(n.id) && n.client !== CLIENT);
   previousTitles = currentTitles();
   applyShared(next);
   const fields = [...newEvents.map((e) => e.parcel), ...newNotes.map((n) => n.target).filter((t) => t && t !== 'farm')];
@@ -75,7 +78,7 @@ function toast(message) {
   toast.timer = setTimeout(() => el.classList.remove('is-on'), 3600);
 }
 
-// The field panel covers the "Assistant · today" column on the home page,
+// The field panel covers the "Today" column on the home page,
 // and a generous share of the screen elsewhere.
 function sizeDrawer() {
   const drawer = document.getElementById('drawer');
@@ -87,8 +90,19 @@ function sizeDrawer() {
 
 let previousTitles = null;
 
+function topBar() {
+  const s = app.state;
+  const m = s.farm.meta;
+  const pct = completeness(s);
+  document.getElementById('farm-switch').innerHTML = `<span class="ring sm" style="--p:${pct * 100}"></span>
+    <span class="farm-sw-text"><b>${esc(m.holding_id)}</b><span>${esc(m.region_name)} · ${fmt(m.area_ha)} ha · ${m.parcels} fields</span></span>${icon('down', 'ico-sm')}`;
+  document.getElementById('today').textContent = fmtLongDate(m.today);
+  document.getElementById('log-count').textContent = s.captured.length ? `${s.captured.length} logged` : '';
+}
+
 function render() {
   const s = app.state;
+  topBar();
   document.getElementById('sidebar').innerHTML = sidebar(s);
   const main = document.getElementById('main');
   main.innerHTML = VIEWS[s.ui.view](s);
@@ -103,8 +117,6 @@ function render() {
     drawer.classList.remove('is-open');
   }
   sizeDrawer();
-  document.getElementById('log-count').textContent = s.captured.length ? `${s.captured.length} logged` : '';
-  document.getElementById('reset').hidden = !s.captured.length && !(s.notes || []).length;
   // After a new record, mark the advice that changed.
   if (previousTitles) {
     document.querySelectorAll('.rec').forEach((el) => {
@@ -123,7 +135,7 @@ async function commit({ events, adjust, flash, message }) {
   const s = app.state;
   previousTitles = currentTitles();
   try {
-    applyShared(await sync.addRecords(events.map((e) => ({ ...e, device: app.device, client: CLIENT })), adjust));
+    applyShared(await sync.addRecords(events.map((e) => ({ ...e, farm: farmId(), device: app.device, client: CLIENT })), adjust));
   } catch (err) {
     toast(`Not saved: ${err.message}`);
     return;
@@ -136,6 +148,7 @@ async function commit({ events, adjust, flash, message }) {
 
 async function saveNote(form) {
   const s = app.state;
+  const target = form.where?.value || form.dataset.noteForm;
   const text = form.text.value.trim();
   const tags = [...form.querySelectorAll('input[name="tags"]:checked')].map((x) => x.value);
   const file = form.photo.files[0];
@@ -146,9 +159,9 @@ async function saveNote(form) {
     const photo = file ? await resizePhoto(file) : null;
     previousTitles = currentTitles();
     applyShared(await sync.addNote({
-      target: form.dataset.noteForm, date: today(s), text, tags, photo, device: 'web', channel: 'text', client: CLIENT,
+      farm: farmId(), target, date: today(s), text, tags, photo, device: 'web', channel: 'text', client: CLIENT,
     }));
-    s.ui.flash = form.dataset.noteForm !== 'farm' ? [form.dataset.noteForm] : [];
+    s.ui.flash = target !== 'farm' ? [target] : [];
     render();
     toast('Note saved. The assistant has read it.');
     setTimeout(() => { s.ui.flash = []; previousTitles = null; }, 4000);
@@ -156,6 +169,21 @@ async function saveNote(form) {
     button.disabled = false;
     toast(`Note not saved: ${err.message}`);
   }
+}
+
+function closePanels(except = null) {
+  for (const id of ['phone-panel', 'farm-menu', 'more-menu', 'sources-panel']) {
+    if (id !== except) document.getElementById(id).hidden = true;
+  }
+}
+
+function togglePanel(id, html) {
+  const panel = document.getElementById(id);
+  const opening = panel.hidden;
+  closePanels();
+  if (!opening) return;
+  if (html != null) panel.innerHTML = html;
+  panel.hidden = false;
 }
 
 async function showPhoneLink() {
@@ -169,24 +197,52 @@ async function showPhoneLink() {
     body = '<p>The server only accepts this Mac. Restart it with <code>python3 scripts/server.py --lan</code> so the iPhone can connect over Wi-Fi.</p>';
   } else {
     const link = (url) => `<div class="phone-url"><code>${esc(url)}</code><button class="btn ghost" data-action="copy-phone" data-url="${esc(url)}">Copy</button></div>`;
-    body = `${info.tailscaleUrl ? `<p><b>Anywhere, secure (Tailscale):</b> works on Wi-Fi or mobile data, with the in-app microphone. The iPhone needs Tailscale switched on.</p>${link(info.tailscaleUrl)}` : ''}
-      ${!info.tailscaleUrl && info.tailscaleHttpUrl ? `<p><b>Anywhere (Tailscale):</b> works on any Wi-Fi or mobile data while Tailscale is on, on the Mac and the iPhone. Voice: use the keyboard's microphone key.</p>${link(info.tailscaleHttpUrl)}` : ''}
-      ${info.phoneUrl ? `<p>${info.tailscaleUrl || info.tailscaleHttpUrl ? '<b>Backup, same Wi-Fi only:</b>' : 'On the iPhone (same Wi-Fi), open this link in <b>Safari</b>:'}</p>${link(info.phoneUrl)}` : ''}
-      <ol><li>Send the link to the phone (AirDrop, Messages or Notes), or type it in Safari.</li>
-      <li>Tap the Share button, then <b>Add to Home Screen</b>.</li>
-      <li>Open <b>DemetrAg</b> from the home screen. What you record there appears here live.</li></ol>`;
+    body = `${info.tailscaleUrl ? `<p><b>Anywhere, secure (Tailscale):</b> Wi-Fi or mobile data, with the in-app microphone. Tailscale must be on.</p>${link(info.tailscaleUrl)}` : ''}
+      ${!info.tailscaleUrl && info.tailscaleHttpUrl ? `<p><b>Anywhere (Tailscale):</b> any network while Tailscale is on, on the Mac and the iPhone.</p>${link(info.tailscaleHttpUrl)}` : ''}
+      ${info.phoneUrl ? `<p>${info.tailscaleUrl || info.tailscaleHttpUrl ? '<b>Backup, same Wi-Fi only:</b>' : 'On the iPhone (same Wi-Fi), open in <b>Safari</b>:'}</p>${link(info.phoneUrl)}` : ''}
+      <ol><li>Send the link to the phone (AirDrop, Messages or Notes).</li>
+      <li>Share → <b>Add to Home Screen</b>.</li>
+      <li>Open <b>DemetrAg</b>: what you record appears here live.</li></ol>`;
   }
-  panel.innerHTML = `<div class="phone-head"><b>📱 Phone app</b><button class="icon-btn" data-action="phone" aria-label="Close">✕</button></div>${body}`;
+  closePanels('phone-panel');
+  panel.innerHTML = `<div class="phone-head"><b>${icon('phone', 'ico-sm')} Phone app</b><button class="icon-btn" data-action="phone" aria-label="Close">${icon('close')}</button></div>${body}`;
   panel.hidden = false;
 }
 
 function go(view) {
-  app.state.ui.view = view;
+  closePanels();
+  app.state.ui.view = view === 'last' ? 'activities' : view;
+  if (view === 'last') app.state.ui.actTab = 'timeline';
   app.state.ui.event = null;
   previousTitles = null;
   render();
   document.getElementById('main').scrollTo?.(0, 0);
   window.scrollTo(0, 0);
+}
+
+function freshUi(farm, view = 'home') {
+  return {
+    view, parcel: null, flash: [], activityFilter: 'all', activitySeason: Number(farm.meta.today.slice(0, 4)), event: null,
+    mapView: { crop: null, ndvi: null }, recFilter: { ...EMPTY_FILTER }, actTab: 'log',
+    noteFilter: { kind: 'all', field: 'all', topic: 'all' }, econ: { priceAdj: 0, yieldAdj: 0 },
+  };
+}
+
+async function switchFarm(id) {
+  closePanels();
+  if (id === farmId()) return;
+  const view = app.state.ui.view;
+  try {
+    const state = await loadFarm(id);
+    state.ui = freshUi(state.farm, view);
+    app.state = state;
+    rememberFarm(id);
+    applyShared(sync.current());
+    render();
+    toast(`Showing ${id}.`);
+  } catch (err) {
+    toast(`Could not open ${id}: ${err.message}`);
+  }
 }
 
 // ---------- map zoom and pan ----------
@@ -252,39 +308,63 @@ function zoomButton(kind, mode) {
   else render();
 }
 
+// Scenario sliders: recompute the figures without rebuilding the sliders being dragged.
+function onSlider(el) {
+  const s = app.state;
+  s.ui.econ[el.dataset.adj] = Number(el.value) / 100;
+  const v = s.ui.econ[el.dataset.adj];
+  document.querySelector(`[data-adj-out="${el.dataset.adj}"]`).textContent = `${v >= 0 ? '+' : ''}${fmt(v * 100, 0)}%`;
+  document.getElementById('scenario-out').innerHTML = scenarioOut(s, s.ui.econ);
+  document.getElementById('roi-out').innerHTML = roiBox(s, s.ui.econ);
+  document.getElementById('actions-out').innerHTML = actionsTable(s, s.ui.econ);
+}
+
 async function start() {
-  const [farm, weather, stock, assumptions] = await Promise.all(['farm', 'weather', 'stock', 'assumptions'].map(loadJson));
-  const state = {
-    farm, weather, stock, assumptions, captured: [], stockAdjust: {}, notes: [],
-    ui: {
-      view: 'home', parcel: null, flash: [], activityFilter: 'all', activitySeason: Number(farm.meta.today.slice(0, 4)), event: null,
-      mapView: { crop: null, ndvi: null }, recFilter: { ...EMPTY_FILTER },
-    },
-  };
+  farmIndex = await listFarms();
+  const state = await loadFarm(savedFarm(farmIndex));
+  state.ui = freshUi(state.farm);
   app.state = state;
   sync = await connectSync({ onChange: onRemote, onStatus: setLive });
   applyShared(sync.state);
-  document.getElementById('farm-line').textContent = `${farm.meta.holding_id} · ${farm.meta.region_name} (${farm.meta.country}) · ${fmt(farm.meta.area_ha)} ha · ${farm.meta.parcels} fields`;
-  document.getElementById('today').textContent = fmtLongDate(farm.meta.today);
   const capture = createCapture(app);
+  const onboarding = createOnboarding({
+    root: document.getElementById('onboarding'),
+    toast,
+    currentFarm: () => app.state.farm,
+    loadDemoFarm: async () => (await loadFarm('FARM-00268')).farm,
+    onOpenFarm: (id) => { if (id === farmId()) toast(`${id} is open.`); else switchFarm(id); },
+  });
   setupMapGestures();
+  setupTooltips();
 
   document.addEventListener('click', (ev) => {
     if (suppressClick) { suppressClick = false; if (ev.target.closest('.farm-map')) return; }
-    const el = ev.target.closest('[data-view],[data-parcel],[data-action],[data-filter],[data-season],[data-event],[data-zoom],[data-rf-cat]');
-    if (!el || el.closest('#capture')) return;
+    const el = ev.target.closest('[data-view],[data-parcel],[data-action],[data-filter],[data-season],[data-event],[data-zoom],[data-rf-cat],[data-act-tab],[data-nf],[data-farm]');
+    if (!el) {
+      if (!ev.target.closest('.menu, .phone-panel, .sheet')) closePanels();
+      return;
+    }
+    if (el.closest('#capture') || el.closest('#onboarding')) return;
     const s = app.state;
+    const action = el.dataset.action;
     if (el.dataset.zoom) zoomButton(el.dataset.zoom, el.dataset.mode);
     else if (el.dataset.rfCat) { s.ui.recFilter.category = el.dataset.rfCat; render(); }
-    else if (el.dataset.action === 'rf-clear') { s.ui.recFilter = { ...EMPTY_FILTER }; render(); }
-    else if (el.dataset.action === 'log') capture.open();
-    else if (el.dataset.action === 'phone') showPhoneLink();
-    else if (el.dataset.action === 'copy-phone') {
+    else if (el.dataset.actTab) { s.ui.actTab = el.dataset.actTab; render(); }
+    else if (el.dataset.nf) { s.ui.noteFilter[el.dataset.nf] = el.dataset.value; render(); }
+    else if (el.dataset.farm) switchFarm(el.dataset.farm);
+    else if (action === 'rf-clear') { s.ui.recFilter = { ...EMPTY_FILTER }; render(); }
+    else if (action === 'log') { closePanels(); capture.open(); }
+    else if (action === 'onboarding') { closePanels(); onboarding.open(el.dataset.step); }
+    else if (action === 'phone') showPhoneLink();
+    else if (action === 'farms') togglePanel('farm-menu', farmMenu(s, farmIndex));
+    else if (action === 'more') togglePanel('more-menu');
+    else if (action === 'sources') togglePanel('sources-panel', sourcesSheet());
+    else if (action === 'copy-phone') {
       navigator.clipboard?.writeText(el.dataset.url).then(() => toast('Link copied.'), () => toast('Copy failed: select the link instead.'));
-    }
-    else if (el.dataset.action === 'close-drawer') { s.ui.parcel = null; render(); }
-    else if (el.dataset.action === 'reset') {
-      if (window.confirm('Remove the activities and notes logged in this demo (on every device) and restore the starting stock?')) {
+    } else if (action === 'close-drawer') { s.ui.parcel = null; render(); }
+    else if (action === 'reset') {
+      closePanels();
+      if (window.confirm('Remove the activities and notes logged in this demo (on every device and farm) and restore the starting stock?')) {
         sync.reset().then((next) => { applyShared(next); render(); toast('Demo reset to the farm records.'); },
           (err) => toast(`Reset failed: ${err.message}`));
       }
@@ -302,12 +382,17 @@ async function start() {
     saveNote(form);
   });
 
+  document.addEventListener('input', (ev) => {
+    if (ev.target.dataset?.adj) onSlider(ev.target);
+  });
+
   document.addEventListener('change', (ev) => {
     const el = ev.target;
     if (el.name === 'photo' && el.closest('[data-note-form]')) {
       el.closest('[data-note-form]').querySelector('.photo-name').textContent = el.files[0] ? el.files[0].name : '';
       return;
     }
+    if (el.matches?.('[data-nf-field]')) { app.state.ui.noteFilter.field = el.value; render(); return; }
     if (el.dataset?.rf && !el.closest('#capture')) {
       app.state.ui.recFilter[el.dataset.rf] = el.value;
       render();
@@ -315,7 +400,11 @@ async function start() {
   });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !capture.isOpen() && app.state.ui.parcel) { app.state.ui.parcel = null; render(); }
+    if (ev.key === 'Escape') {
+      if (onboarding.isOpen()) { onboarding.close(); return; }
+      closePanels();
+      if (!capture.isOpen() && app.state.ui.parcel) { app.state.ui.parcel = null; render(); }
+    }
     if (ev.key === 'Enter' && ev.target.matches?.('.field')) { app.state.ui.parcel = ev.target.dataset.parcel; render(); }
   });
 
@@ -324,6 +413,6 @@ async function start() {
 }
 
 start().catch((err) => {
-  document.getElementById('main').innerHTML = `<div class="card error"><h2>Could not load the farm data</h2><p>${String(err.message)}</p></div>`;
+  document.getElementById('main').innerHTML = `<div class="card error"><h2>Could not load the farm data</h2><p>${esc(String(err.message))}</p></div>`;
   console.error(err);
 });

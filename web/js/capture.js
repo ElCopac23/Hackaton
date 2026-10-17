@@ -4,7 +4,9 @@ import { esc, fmt, fmtQty, fmtLongDate, cropName, cropColor, shortId } from './u
 import {
   parseNote, reviewDraft, nextQuestion, applyAnswer, understood, expectedUnit, PRODUCT_TYPES_FOR_OP,
 } from './parser.js';
-import { product, stockLevel, parcel, areaOf, campaignFor, today, cropsOnFarm, parcelsOfCrop } from './model.js';
+import {
+  product, stockLevel, stockTracked, parcel, areaOf, campaignFor, today, cropsOnFarm, parcelsOfCrop,
+} from './model.js';
 
 const EXAMPLES = [
   'Applied 100 kg of complex fertiliser before wheat sowing for all fields',
@@ -13,6 +15,17 @@ const EXAMPLES = [
   'Sowed barley on fields 73 and 81 today',
   'Do not spray the barley today',
 ];
+
+// Examples for a farm without the demo farm's products: its own crops and field numbers.
+function examplesFor(s) {
+  if (s.stock.tracked !== false) return EXAMPLES;
+  const field = (crop) => s.farm.parcels.find((p) => p.crop === crop)?.short.slice(-2);
+  const out = ['Sowed wheat seed on the wheat fields today, 180 kg per hectare'];
+  if (field('BARL')) out.push(`Applied 100 kg of complex fertiliser on field ${field('BARL')} today`);
+  if (field('RAPE')) out.push(`Sprayed herbicide on field ${field('RAPE')}, 1 litre per hectare`);
+  out.push('Do not spray the barley today');
+  return out;
+}
 
 // Exact figures for the record check: 100 -> "100", 4.615 -> "4.62", 2163.0 kg -> "2,163 kg".
 const num = (v) => (Number.isInteger(Math.round(v * 100) / 100) ? fmt(v, 0) : fmt(v, Math.abs(v) < 10 ? 2 : 1));
@@ -147,10 +160,12 @@ export function createCapture(app, { root = document.getElementById('capture'), 
       if (prod.composition) {
         rows.push(['Nutrients', `N ${fmt((prod.composition.n * perHa) / 100, 1)} · P₂O₅ ${fmt((prod.composition.p2o5 * perHa) / 100, 1)} · K₂O ${fmt((prod.composition.k2o * perHa) / 100, 1)} kg/ha`]);
       }
-      const before = stockLevel(st, prod.id);
-      const after = before - total;
-      rows.push(['Stock', `${fmtQty(before, prod.unit)} → <b class="${after < 0 ? 'neg' : ''}">${fmtQty(after, prod.unit)}</b>`]);
-      if (after < 0) warn = `That is more than the ${fmtQty(before, prod.unit)} in stock. Check the amount, or the stock record.`;
+      if (stockTracked(st)) {
+        const before = stockLevel(st, prod.id);
+        const after = before - total;
+        rows.push(['Stock', `${fmtQty(before, prod.unit)} → <b class="${after < 0 ? 'neg' : ''}">${fmtQty(after, prod.unit)}</b>`]);
+        if (after < 0) warn = `That is more than the ${fmtQty(before, prod.unit)} in stock. Check the amount, or the stock record.`;
+      }
       const expected = { fertilisation: [20, 800], spraying: [0.05, 8], sowing: [2, 300] }[draft.type];
       if (expected && (perHa < expected[0] || perHa > expected[1])) warn = `${fmt(perHa, 2)} ${prod.unit}/ha is unusual for this product. Check whether the amount is per hectare or in total.`;
     }
@@ -184,7 +199,7 @@ export function createCapture(app, { root = document.getElementById('capture'), 
       </div>
       ${warn ? `<div class="warn">${esc(warn)}</div>` : ''}
       ${blocked.length ? `<div class="warn">Before saving: ${esc(blocked.join('; '))}.</div>` : ''}
-      <div class="confirm-note">Saving adds this to ${draft.parcels.length} field timeline${draft.parcels.length === 1 ? '' : 's'}, updates the inventory and refreshes the advice.</div>
+      <div class="confirm-note">Saving adds this to ${draft.parcels.length} field timeline${draft.parcels.length === 1 ? '' : 's'}, ${stockTracked(s()) ? 'updates the inventory and ' : ''}refreshes the advice.</div>
       <div class="confirm-actions">
         <button class="btn ghost" data-cap="restart">Start over</button>
         <button class="btn primary" data-cap="save" ${blocked.length ? 'disabled' : ''}>Confirm and save</button>
@@ -216,7 +231,7 @@ export function createCapture(app, { root = document.getElementById('capture'), 
       ${SR ? `<label class="long-toggle"><input type="checkbox" data-cap-long ${longMode ? 'checked' : ''}>
         Long recording: keep listening through pauses until I press stop (up to 3 minutes)</label>`
     : '<div class="dictate-hint">🎙 To speak: tap the text box, then the <b>microphone key</b> on the keyboard. Dictate as long as you like, then Send.</div>'}
-      ${draft ? '' : `<div class="examples"><span class="muted small">Try:</span>${EXAMPLES.map((e, i) => `<button class="chip" data-example="${i}">${esc(e)}</button>`).join('')}</div>`}`}
+      ${draft ? '' : `<div class="examples"><span class="muted small">Try:</span>${examplesFor(s()).map((e, i) => `<button class="chip" data-example="${i}">${esc(e)}</button>`).join('')}</div>`}`}
     </div>`;
     const convo = root.querySelector('.convo');
     convo.scrollTop = convo.scrollHeight;
@@ -305,9 +320,9 @@ export function createCapture(app, { root = document.getElementById('capture'), 
       if (draft.type === 'spraying') Object.assign(e, { product_type: prod.type, active_substance: prod.active_substance });
       return e;
     });
-    const adjust = prod ? { [prod.id]: -total } : {};
+    const adjust = prod && stockTracked(st) ? { [prod.id]: -total } : {};
     const what = draft.type === 'harvest' ? 'Harvest' : prod.name;
-    Promise.resolve(app.commit({ events, adjust, flash: draft.parcels, message: `${what} saved to ${events.length} field${events.length > 1 ? 's' : ''}. Stock and advice updated.` }))
+    Promise.resolve(app.commit({ events, adjust, flash: draft.parcels, message: `${what} saved to ${events.length} field${events.length > 1 ? 's' : ''}. ${stockTracked(st) ? 'Stock and advice' : 'Advice'} updated.` }))
       .finally(() => close());
   }
 
@@ -315,7 +330,7 @@ export function createCapture(app, { root = document.getElementById('capture'), 
     if (ev.target === root) { close(); return; }
     const t = ev.target.closest('button');
     if (!t) return;
-    if (t.dataset.example != null) { fromVoice = false; send(EXAMPLES[Number(t.dataset.example)]); return; }
+    if (t.dataset.example != null) { fromVoice = false; send(examplesFor(s())[Number(t.dataset.example)]); return; }
     if (t.dataset.answer != null) { answer(Number(t.dataset.answer)); return; }
     const action = t.dataset.cap;
     if (action === 'close') close();
@@ -363,7 +378,7 @@ export function createCapture(app, { root = document.getElementById('capture'), 
       if (k === 'type' || k === 'productId') {
         const types = PRODUCT_TYPES_FOR_OP[draft.type] || [];
         if (draft.productId && !types.includes(product(s(), draft.productId).type)) draft.productId = null;
-        if (!draft.productId && types.length) draft.productId = s().stock.products.find((p) => types.includes(p.type)).id;
+        if (!draft.productId && types.length) draft.productId = s().stock.products.find((p) => types.includes(p.type))?.id ?? null;
         if (draft.type === 'harvest') draft.productId = null;
         if (draft.rate != null) {
           // Re-check the amount against the new product's unit (litres vs kilograms, tonnes for harvests).

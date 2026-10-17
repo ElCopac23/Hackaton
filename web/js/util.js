@@ -20,6 +20,8 @@ export const TYPE_LABELS = {
   harvest: 'Harvest',
 };
 
+import { icon } from './icons.js';
+
 export const SOURCES = {
   records: { label: 'Your records', title: 'From the farm records (synthetic hackathon dataset)' },
   captured: { label: 'Captured', title: 'Logged in this app' },
@@ -28,7 +30,11 @@ export const SOURCES = {
   simulated: { label: 'Simulated', title: 'Simulated for the demo, not in the dataset' },
   rule: { label: 'Rule of thumb', title: 'Threshold set by the team, to be confirmed by an adviser' },
   note: { label: 'Your notes', title: 'From notes and photos logged on the phone or the farm home' },
+  accounts: { label: 'Your accounts', title: 'Farm accounts: synthetic economics, subsidy and sales tables (dataset)' },
+  market: { label: 'Market prices', title: 'Monthly crop prices, synthetic market price table (dataset)' },
+  benchmark: { label: 'Similar farms', title: 'Median of synthetic arable farms in the same region (dataset)' },
 };
+const SOURCE_ICON = { accounts: 'economics' };
 
 export const cropName = (c) => CROPS[c]?.name ?? c;
 export const cropColor = (c) => CROPS[c]?.color ?? '#999';
@@ -51,13 +57,26 @@ export function fmtQty(value, unit) {
   return `${fmt(value, Math.abs(value) < 100 ? 1 : 0)} ${unit}`;
 }
 
+// Data sources are shown as small icons; the name and details appear on hover or tap.
 export function badge(source) {
   const s = SOURCES[source];
   if (!s) return '';
-  return `<span class="badge badge-${source}" title="${esc(s.title)}">${esc(s.label)}</span>`;
+  return `<span class="src src-${source}" role="img" tabindex="0" aria-label="${esc(s.label)}" data-tip="${esc(s.label)}: ${esc(s.title)}">${icon(SOURCE_ICON[source] || source, 'src-ico')}</span>`;
 }
 
-export const badges = (list) => list.map(badge).join('');
+export const badges = (list) => (list.length ? `<span class="srcs">${list.map(badge).join('')}</span>` : '');
+
+// Euros: "€1,240", "€12.4k", "€1.2M".
+export function fmtEur(value, { sign = false } = {}) {
+  if (value == null || Number.isNaN(Number(value))) return '–';
+  const v = Number(value);
+  const a = Math.abs(v);
+  let body;
+  if (a >= 1e6) body = `${fmt(a / 1e6, 1)}M`;
+  else if (a >= 1e4) body = `${fmt(a / 1e3, a >= 1e5 ? 0 : 1)}k`;
+  else body = fmt(a, 0);
+  return `${v < 0 ? '−' : sign && v > 0 ? '+' : ''}€${body}`;
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -131,6 +150,9 @@ export function weatherIcon(code) {
   if (code >= 95) return { icon: '⛈️', text: 'Thunderstorm' };
   return { icon: '🌥️', text: 'Cloudy' };
 }
+
+// "Crops 2026" -> "crops 2026", but "CAP documents" stays as it is.
+export const lowerFirst = (text) => text.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
 
 export const shortId = (parcelId) => `P-${parcelId.slice(-4)}`;
 

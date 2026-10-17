@@ -9,7 +9,8 @@ export const parcel = (s, id) => s.farm.parcels.find((p) => p.id === id);
 export const parcelsOfCrop = (s, crop) => s.farm.parcels.filter((p) => p.crop === crop);
 export const areaOf = (s, ids) => sum(ids.map((id) => parcel(s, id).area_ha));
 export const product = (s, id) => s.stock.products.find((p) => p.id === id);
-export const stockLevel = (s, id) => product(s, id).stock + (s.stockAdjust[id] || 0);
+export const stockLevel = (s, id) => (product(s, id).stock ?? 0) + (s.stockAdjust[id] || 0);
+export const stockTracked = (s) => s.stock.tracked !== false;
 
 export function cropsOnFarm(s) {
   const crops = [...new Set(s.farm.parcels.map((p) => p.crop))];
@@ -38,6 +39,12 @@ export function parcelStatus(s, p) {
   if (sown) return { code: 'sown', label: `Sown ${fmtDate(sown.date)}`, detail: `${CROPS[p.crop].name} for ${next}` };
   const fert = autumn.find((e) => e.type === 'fertilisation');
   if (fert) return { code: 'prepared', label: 'Fertilised, to sow', detail: `Base fertiliser ${fmtDate(fert.date)}` };
+  // Farms onboarded with fields and crops only: no records to tell harvested from standing.
+  if (s.farm.meta.level === 'basic') {
+    return doneHarvest
+      ? { code: 'fallow', label: `Harvested ${fmtDate(doneHarvest.date)}`, detail: `${CROPS[p.crop].name} ${year(s)}` }
+      : { code: 'basic', label: `${CROPS[p.crop].name} ${year(s)}`, detail: 'No operations recorded yet' };
+  }
   const harvested = doneHarvest ? `Harvested ${fmtDate(doneHarvest.date)}` : 'Harvested';
   if (CROPS[p.crop].season === 'winter') return { code: 'to-sow', label: 'To sow', detail: harvested };
   const h = s.farm.history[p.crop]?.sowing;
@@ -83,8 +90,8 @@ export function autumnJobs(s) {
     plan.steps.forEach((step, i) => {
       const done = ids.filter((id) => evs.some((e) => e.parcel === id && e.type === step.type && e.campaign === plan.season));
       const productId = step.product || step.product_by_crop?.[crop];
-      const median = s.farm.history[crop].seed_rate_median;
-      const rate = step.rate === 'history_median' ? (median >= 20 ? Math.round(median) : Math.round(median * 10) / 10) : step.rate;
+      const median = s.farm.history[crop]?.seed_rate_median;
+      const rate = step.rate !== 'history_median' ? step.rate : median == null ? null : (median >= 20 ? Math.round(median) : Math.round(median * 10) / 10);
       jobs.push(finishJob(s, {
         key: `${step.key}-${crop}`, type: step.type, op: step.op, crop, label: step.label, stepKey: step.key,
         stepIndex: i, parcels: ids, done, ready: i === 0 ? ids : previousDone, productId, rate, unit: step.unit,

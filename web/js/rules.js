@@ -1,9 +1,9 @@
 // The assistant's rules. Every number comes from the data; thresholds come from assumptions.json.
 import {
-  cropName, fmt, fmtDate, fmtDateRuns, fmtMonthDay, fmtQty, daysBetween, mean, sum, shortId, OP_LABELS,
+  CROPS, cropName, fmt, fmtDate, fmtDateRuns, fmtMonthDay, fmtQty, daysBetween, mean, sum, shortId, OP_LABELS,
 } from './util.js';
 import {
-  today, autumnJobs, parcelsOfCrop, parcel, product, stockLevel, allEvents, cropsOnFarm, year,
+  today, autumnJobs, parcelsOfCrop, parcel, product, stockLevel, allEvents, cropsOnFarm, year, areaOf,
 } from './model.js';
 import { noteInsights } from './notes.js';
 
@@ -72,7 +72,29 @@ export function sowingPosition(s, crop) {
   return { ...h, daysToMedian: daysBetween(today(s), toIso(h.median)), daysToLatest: daysBetween(today(s), toIso(h.latest)) };
 }
 
+// A farm that gave only fields and crops still gets the sowing window for its winter crops.
+function basicTimingRecs(s) {
+  const winter = cropsOnFarm(s).filter((c) => CROPS[c]?.season === 'winter');
+  if (!winter.length) return [];
+  const w = opWindow(s, 'sowing');
+  const season = s.assumptions.autumn_plan.season;
+  const sown = new Set(allEvents(s).filter((e) => e.type === 'sowing' && e.campaign === season).map((e) => e.parcel));
+  const ids = winter.flatMap((c) => parcelsOfCrop(s, c).map((p) => p.id)).filter((id) => !sown.has(id));
+  if (!ids.length) return [];
+  const crops = winter.filter((c) => parcelsOfCrop(s, c).some((p) => ids.includes(p.id)));
+  const lines = [`Sowing days: ${fmtDateRuns(w.good)}.`];
+  if (w.blocker) lines.push(`Window closes after ${fmtDate(w.closesAfter)}. ${blockerText(w, 'sowing')}.`);
+  lines.push('Add your autumn plan and past sowing dates to get the jobs ranked field by field.');
+  return [{
+    id: 'timing-basic-sowing', kind: 'timing', op: 'sowing', crop: null, parcels: ids, step: 'sow',
+    category: 'timing', crops, seasons: [s.assumptions.autumn_plan.season], ops: ['sowing'], products: [],
+    priority: 50, title: `Winter crops: ${fmt(areaOf(s, ids))} ha to sow${w.closesAfter ? ` by ${fmtDate(w.closesAfter)}` : ''}`,
+    lines, goodDays: w.good, sources: ['forecast', 'rule'],
+  }];
+}
+
 export function timingRecs(s) {
+  if (s.farm.meta.level === 'basic') return basicTimingRecs(s);
   const t = today(s);
   const jobs = autumnJobs(s);
   const recs = [];
@@ -194,6 +216,7 @@ export function stockRecs(s) {
 
 export function nitrogenSummary(s, crop) {
   const h = s.farm.history[crop];
+  if (!h) return null;
   const ref = s.farm.regional[crop]?.n_kg_ha ?? null;
   const ns = Object.values(h.n_by_year).filter((v) => v != null);
   const ys = Object.entries(h.yield_by_year).filter(([, v]) => v != null);
@@ -227,7 +250,7 @@ export function nitrogenRecs(s) {
   const band = s.assumptions.nitrogen_band_pct;
   return cropsOnFarm(s).map((crop) => {
     const n = nitrogenSummary(s, crop);
-    if (n.ref == null || n.avg == null) return null;
+    if (!n || n.ref == null || n.avg == null) return null;
     const dir = n.diffPct > band ? 'above' : n.diffPct < -band ? 'below' : 'in line with';
     const lines = [
       `10-season average ${fmt(n.avg, 0)} kg N/ha vs ${fmt(n.ref, 0)} kg regional reference (${n.diffPct > 0 ? '+' : ''}${fmt(n.diffPct, 0)}%); above it in ${n.seasonsAbove} of ${n.seasons} seasons.`,
@@ -303,9 +326,12 @@ export function fieldNotes(s, p) {
     .map((r) => ({ text: `${r.title}. ${r.lines.slice(1, 2).join(' ')}`, sources: r.sources }));
   const job = autumnJobs(s).filter((j) => j.parcels.includes(p.id) && j.remaining.includes(p.id))
     .sort((a, b) => a.stepIndex - b.stepIndex)[0];
+  if (!job && s.farm.meta.level === 'basic' && timingRecs(s)[0]?.parcels.includes(p.id)) {
+    notes.push({ text: `Next: sowing. Suitable days: ${fmtDateRuns(opWindow(s, 'sowing').good)}.`, sources: ['forecast', 'rule'] });
+  }
   if (job) {
     const w = opWindow(s, job.op);
-    notes.push({ text: `Next: ${job.label.toLowerCase()}${job.productId ? ` (${product(s, job.productId).name}, ${job.rate} ${job.unit})` : ''}. Suitable days: ${fmtDateRuns(w.good)}.`, sources: ['forecast', 'rule'] });
+    notes.push({ text: `Next: ${job.label.toLowerCase()}${job.productId && job.rate != null ? ` (${product(s, job.productId).name}, ${job.rate} ${job.unit})` : ''}. Suitable days: ${fmtDateRuns(w.good)}.`, sources: ['forecast', 'rule'] });
   }
   const harvests = allEvents(s).filter((e) => e.parcel === p.id && e.type === 'harvest' && e.status === 'done' && e.yield_t_ha != null);
   const last = harvests.filter((e) => e.campaign === year(s))[0];

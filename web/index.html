@@ -10,22 +10,30 @@
   <header class="topbar">
     <div class="brand">
       <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="#2E6B4F"/>
-        <path d="M7 22c4-1 7-4 9-9m-9 13c6-1 11-5 13-12m-13 16c8-1 14-6 17-15" stroke="#F4F2EC" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <rect width="32" height="32" rx="9" fill="#1B8A4C"/>
+        <path d="M7 22c4-1 7-4 9-9m-9 13c6-1 11-5 13-12m-13 16c8-1 14-6 17-15" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
       </svg>
-      <div><div class="brand-name">DemetrAg</div><div class="brand-sub">Record once. Know what to do next.</div></div>
+      <span class="brand-name">DemetrAg</span>
     </div>
-    <div class="farm-chip">
-      <span id="farm-line">Loading…</span>
-      <span class="tag tag-synthetic" title="Farm records come from the EU Agri Hackathon synthetic dataset. Not a real farm.">Synthetic data</span>
+    <div class="farm-wrap">
+      <button class="farm-switch" id="farm-switch" data-action="farms" aria-haspopup="true">Loading…</button>
+      <span class="tag tag-synthetic" data-tip="Farm records come from the EU Agri Hackathon synthetic dataset. Not a real farm." tabindex="0">Synthetic data</span>
+      <div class="menu farm-menu" id="farm-menu" hidden></div>
     </div>
     <div class="top-right">
       <span class="today" id="today"></span>
-      <span class="live live-local" id="live">…</span>
+      <span class="live live-local" id="live" tabindex="0">…</span>
       <span class="log-count" id="log-count"></span>
-      <button class="btn ghost" data-action="phone">📱 Phone app</button>
-      <button class="btn ghost" id="reset" data-action="reset" hidden>Reset demo</button>
-      <button class="btn primary" data-action="log">🎙 Log activity</button>
+      <button class="btn ghost" data-action="onboarding"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>Onboarding</button>
+      <button class="btn primary" data-action="log"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>Log activity</button>
+      <div class="more-wrap">
+        <button class="icon-btn" data-action="more" aria-label="More" aria-haspopup="true"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+        <div class="menu more-menu" id="more-menu" hidden>
+          <button class="menu-item" data-action="phone">Phone app link</button>
+          <button class="menu-item" data-action="sources">Data sources</button>
+          <button class="menu-item danger" data-action="reset">Reset demo</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -36,18 +44,10 @@
 
   <aside id="drawer" class="drawer" aria-label="Field details"></aside>
   <div id="phone-panel" class="phone-panel" hidden></div>
+  <div id="sources-panel" class="phone-panel sheet" hidden></div>
   <div id="capture" class="modal" hidden></div>
+  <div id="onboarding" class="modal" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-  <footer class="footer">
-    <b>Data sources.</b>
-    Farm records: EU Agri Hackathon synthetic dataset (not a real farm, do not redistribute).
-    Regional weather history: AgERA5 reanalysis (Copernicus licence), via the dataset.
-    Regional nitrogen reference: NPKGRIDS (CC BY 4.0), via the dataset.
-    Forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), snapshot.
-    Simulated for the demo: opening stock, autumn plan, sample field notes, NDVI. Notes and photos you add stay on the sync server on this Mac.
-    Advice is rule-based; thresholds are rules of thumb to be confirmed by an adviser.
-  </footer>
 
   <script type="module" src="js/main.js"></script>
 </body>

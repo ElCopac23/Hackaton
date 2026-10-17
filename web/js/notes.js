@@ -118,3 +118,16 @@ export function notesFor(s, parcelId) {
     .filter((n) => n.target === parcelId || (parcelId === 'farm' && n.target === 'farm'))
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 }
+
+// Everything the farmer wrote or photographed, newest first: notes from the phone and the farm
+// home, plus the farm's field annotations (simulated for the demo).
+export function allNotes(s) {
+  const own = (s.notes || []).map((n) => ({
+    ...n, parcel: n.target && n.target !== 'farm' ? n.target : null, source: 'captured',
+    kind: n.device === 'phone' ? 'Phone' : 'Farm home', when: n.created_at || n.date || '',
+  }));
+  const annotations = (s.assumptions.simulated_notes || []).map((n, i) => ({
+    ...n, id: `sim-${i}`, target: n.parcel || 'farm', tags: [], photo: null, source: 'simulated', when: n.date,
+  }));
+  return [...own, ...annotations].sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.when.localeCompare(a.when));
+}

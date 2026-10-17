@@ -37,6 +37,8 @@ STATE_FILE = os.path.join(DATA, "state.json")
 KEY_FILE = os.path.join(DATA, "access-key.txt")
 MAX_BODY = 12 * 1024 * 1024
 PUBLIC_PATHS = ("/app/manifest.webmanifest", "/app/icons/")
+FARM_ID = re.compile(r"FARM-\d{5}")
+DEFAULT_FARM = "FARM-00455"
 
 
 class Store:
@@ -122,6 +124,14 @@ def load_key():
     with open(KEY_FILE, "w") as f:
         f.write(key)
     return key
+
+
+def farm_id(value):
+    """Records and notes belong to one farm; entries saved before farms existed are FARM-00455."""
+    value = str(value or DEFAULT_FARM)
+    if not FARM_ID.fullmatch(value):
+        raise ValueError("unknown farm")
+    return value
 
 
 def save_photo(data_url):
@@ -264,6 +274,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 adjust = body.get("adjust", {})
                 if not isinstance(events, list) or not all(isinstance(e, dict) and e.get("parcel") for e in events):
                     raise ValueError("events must be a list of records")
+                for e in events:
+                    e["farm"] = farm_id(e.get("farm"))
 
                 def add(state):
                     state["captured"].extend(events)
@@ -276,7 +288,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not text and not photo:
                     raise ValueError("a note needs text or a photo")
                 note = {
-                    "id": uuid.uuid4().hex[:12], "target": str(body.get("target", "farm")),
+                    "id": uuid.uuid4().hex[:12], "farm": farm_id(body.get("farm")), "target": str(body.get("target", "farm")),
                     "date": str(body.get("date", ""))[:10], "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "text": text, "tags": [str(t)[:30] for t in body.get("tags", [])][:10], "photo": photo,
                     "device": str(body.get("device", "web"))[:10], "channel": str(body.get("channel", "text"))[:10],

@@ -51,6 +51,7 @@ export async function connectSync({ onChange, onStatus = () => {}, base = '' }) 
       const next = await res.json();
       if (next.version !== version) {
         version = next.version;
+        state = next;
         onChange(next);
       }
     } catch { /* next event or visibility change retries */ }
@@ -72,11 +73,13 @@ export async function connectSync({ onChange, onStatus = () => {}, base = '' }) 
     onStatus('local');
   }
 
-  const applied = (next) => { version = next.version; return next; };
+  const applied = (next) => { version = next.version; state = next; return next; };
 
   return {
     mode,
     state,
+    // Latest shared state of every farm (records and notes carry a farm id).
+    current: () => state,
     async addRecords(events, adjust) {
       if (mode === 'server') return applied(await postJson(`${base}api/records`, { events, adjust }));
       state = { ...state, captured: [...state.captured, ...events], stockAdjust: { ...state.stockAdjust } };

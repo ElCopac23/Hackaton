@@ -6,3 +6,4 @@ web/data/forecast_snapshot.json
 __pycache__/
 .DS_Store
 server-data/
+web/data/farms/

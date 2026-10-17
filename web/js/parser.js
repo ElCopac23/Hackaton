@@ -321,13 +321,13 @@ export function nextQuestion(s, draft) {
     const unit = p.unit;
     let usual;
     if (draft.type === 'sowing') {
-      const median = s.farm.history[p.crop].seed_rate_median;
-      usual = [median >= 20 ? Math.round(median) : Math.round(median * 10) / 10];
+      const median = s.farm.history[p.crop]?.seed_rate_median;
+      usual = median == null ? [] : [median >= 20 ? Math.round(median) : Math.round(median * 10) / 10];
     } else if (draft.type === 'fertilisation') usual = [100, 150, 200];
     else usual = [0.5, 1, 1.5];
     return {
       key: 'rate',
-      text: `${draft.unitError ? `${draft.unitError} ` : ''}How much ${p.name} per hectare, in ${UNIT_WORD[unit]}?${draft.type === 'sowing' ? ' Your usual seed rate is shown first.' : ''}`,
+      text: `${draft.unitError ? `${draft.unitError} ` : ''}How much ${p.name} per hectare, in ${UNIT_WORD[unit]}?${draft.type === 'sowing' && usual.length ? ' Your usual seed rate is shown first.' : ''}`,
       options: usual.map((v) => ({ label: `${v} ${unit}/ha`, value: { value: v, unit } })),
     };
   }

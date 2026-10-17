@@ -111,7 +111,7 @@ export function renderMap(s, { mode = 'crop', selected = null, flash = [], view 
     const st = parcelStatus(s, r.p);
     let fill;
     if (mode === 'ndvi') fill = ndviColor(ndviFor(s, r.p).value);
-    else if (st.code === 'standing') fill = CROPS[r.p.crop].color;
+    else if (st.code === 'standing' || st.code === 'basic') fill = CROPS[r.p.crop].color;
     else if (st.code === 'sown') fill = `url(#sown-${r.p.crop})`;
     else fill = `url(#stub-${r.p.crop})`;
     const fs = r.s * 0.15;
