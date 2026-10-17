@@ -1,4 +1,4 @@
-# Field Assistant: farm home (hackathon prototype)
+# DemetrAg: farm home (hackathon prototype)
 
 EU Agri Hackathon 2026, Challenge 2. One farm (FARM-00455, synthetic, Loiret FRB06, 86.2 ha, 14 fields).
 The farm home shows the farm today, lets the farmer log an activity by text or voice, and turns the
@@ -21,7 +21,8 @@ so the demo stays the same. "Reset demo" in the top bar removes logged activitie
 1. Farm home: assistant shows the maize harvest window and the autumn workload; NPK stock is low.
 2. Click a wheat field (P-5182): soil, 10 seasons of yield and nitrogen, timeline.
 3. Log activity → "Applied 100 kg of complex fertiliser before wheat sowing for all fields".
-   The assistant asks "all 14 fields or the 3 wheat fields?", then shows the record to confirm.
+   The assistant asks "all 14 fields or the 3 wheat fields?", then "per hectare or in total?", then shows
+   the exact record to check: fields, date, rate and total (100 kg/ha × 21.63 ha = 2,163 kg).
 4. After saving: wheat moves up to "sow 21.6 ha", NPK stock turns critical (837 kg left), both marked "Updated".
 5. Log "Sprayed Nuvexa, 1 litre per hectare on the wheat": it asks which Nuvexa, then updates the herbicide stock.
 
@@ -39,6 +40,27 @@ so the demo stays the same. "Reset demo" in the top bar removes logged activitie
 
 63 operations dated after the same season's harvest are left out as implausible; growth stages (BBCH) are not
 shown because they often contradict the dates.
+
+## Logging rules (text or voice)
+
+- Only completed work is recorded: negated notes ("do not spray", "didn't spray", "spraying was cancelled")
+  and plans ("will", "tomorrow", "need to") are rejected with an explanation.
+- "Per hectare" and "in total" must be explicit; when the note says neither (or both), the assistant asks.
+- Units must match the product: litres for liquid crop protection, kilograms or tonnes for fertiliser and seed,
+  tonnes for harvests. A wrong unit is rejected and the amount is asked again.
+- Every field number or crop that cannot be matched to this farm is flagged; fields of a different crop than
+  the one named are flagged too (keep or remove).
+- Before saving, the dialog shows the exact fields, date, rate per hectare and total. Saving is blocked until
+  nothing is missing.
+- Voice: short mode stops when you pause and sends the note; "Long recording" keeps listening through pauses
+  until you press stop (up to 3 minutes), then lets you edit the text before sending.
+
+## Screens
+
+- Farm home fills the screen: the map can be zoomed (+ / − / fit buttons, mouse wheel) and dragged.
+  Clicking a field opens a panel that covers the "Assistant · today" column.
+- Recommendations can be filtered by kind (timing, warnings, alerts), crop, type of work, year (season),
+  stock product and field.
 
 ## How the advice works
 

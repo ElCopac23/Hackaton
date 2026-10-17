@@ -3,6 +3,8 @@ import {
   sidebar, homeView, weatherView, activitiesView, ndviView, lastView, recsView, inventoryView, fieldDrawer,
 } from './views.js';
 import { createCapture } from './capture.js';
+import { zoomView, clampView, viewBoxOf } from './map.js';
+import { EMPTY_FILTER } from './rules.js';
 
 const STORE = 'farm-assistant-demo-v1';
 const VIEWS = {
@@ -45,6 +47,16 @@ function toast(message) {
   toast.timer = setTimeout(() => el.classList.remove('is-on'), 3600);
 }
 
+// The field panel covers the "Assistant · today" column on the home page,
+// and a generous share of the screen elsewhere.
+function sizeDrawer() {
+  const drawer = document.getElementById('drawer');
+  const card = document.querySelector('.assistant-card');
+  let width = Math.min(Math.max(window.innerWidth * 0.36, 480), 640);
+  if (card && window.innerWidth > 1180) width = Math.max(420, window.innerWidth - card.getBoundingClientRect().left + 12);
+  drawer.style.width = `${Math.min(width, window.innerWidth)}px`;
+}
+
 let previousTitles = null;
 
 function render() {
@@ -59,6 +71,7 @@ function render() {
   } else {
     drawer.classList.remove('is-open');
   }
+  sizeDrawer();
   document.getElementById('log-count').textContent = s.captured.length ? `${s.captured.length} logged` : '';
   document.getElementById('reset').hidden = !s.captured.length;
   // After a new record, mark the advice that changed.
@@ -96,23 +109,94 @@ function go(view) {
   window.scrollTo(0, 0);
 }
 
+// ---------- map zoom and pan ----------
+
+function svgPoint(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function currentView(svg) {
+  const vb = svg.viewBox.baseVal;
+  return { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+}
+
+function setView(svg, view) {
+  const v = clampView(app.state, view);
+  svg.setAttribute('viewBox', viewBoxOf(v));
+  app.state.ui.mapView[svg.dataset.mode] = v;
+}
+
+let drag = null;
+let suppressClick = false;
+
+function setupMapGestures() {
+  document.addEventListener('wheel', (ev) => {
+    const svg = ev.target.closest?.('.farm-map');
+    if (!svg) return;
+    ev.preventDefault();
+    const factor = ev.deltaY > 0 ? 1.15 : 1 / 1.15;
+    setView(svg, zoomView(app.state, currentView(svg), factor, svgPoint(svg, ev.clientX, ev.clientY)));
+  }, { passive: false });
+
+  document.addEventListener('pointerdown', (ev) => {
+    const svg = ev.target.closest?.('.farm-map');
+    if (!svg || ev.button !== 0) return;
+    drag = { svg, x: ev.clientX, y: ev.clientY, view: currentView(svg), moved: false, id: ev.pointerId };
+  });
+  document.addEventListener('pointermove', (ev) => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const dx = ev.clientX - drag.x;
+    const dy = ev.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+    if (!drag.moved) { drag.moved = true; drag.svg.classList.add('is-panning'); drag.svg.setPointerCapture?.(ev.pointerId); }
+    const scale = 1 / drag.svg.getScreenCTM().a;
+    setView(drag.svg, { ...drag.view, x: drag.view.x - dx * scale, y: drag.view.y - dy * scale });
+  });
+  const end = () => {
+    if (drag?.moved) { suppressClick = true; drag.svg.classList.remove('is-panning'); }
+    drag = null;
+  };
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', end);
+}
+
+function zoomButton(kind, mode) {
+  const s = app.state;
+  if (kind === 'fit') s.ui.mapView[mode] = null;
+  else s.ui.mapView[mode] = zoomView(s, s.ui.mapView[mode], kind === 'in' ? 0.75 : 1 / 0.75);
+  const svg = document.querySelector(`.farm-map[data-mode="${mode}"]`);
+  if (svg && s.ui.mapView[mode]) svg.setAttribute('viewBox', viewBoxOf(s.ui.mapView[mode]));
+  else render();
+}
+
 async function start() {
   const [farm, weather, stock, assumptions] = await Promise.all(['farm', 'weather', 'stock', 'assumptions'].map(loadJson));
   const state = {
     farm, weather, stock, assumptions, captured: [], stockAdjust: {},
-    ui: { view: 'home', parcel: null, flash: [], activityFilter: 'all', activitySeason: Number(farm.meta.today.slice(0, 4)), event: null },
+    ui: {
+      view: 'home', parcel: null, flash: [], activityFilter: 'all', activitySeason: Number(farm.meta.today.slice(0, 4)), event: null,
+      mapView: { crop: null, ndvi: null }, recFilter: { ...EMPTY_FILTER },
+    },
   };
   restore(state);
   app.state = state;
   document.getElementById('farm-line').textContent = `${farm.meta.holding_id} · ${farm.meta.region_name} (${farm.meta.country}) · ${fmt(farm.meta.area_ha)} ha · ${farm.meta.parcels} fields`;
   document.getElementById('today').textContent = fmtLongDate(farm.meta.today);
   const capture = createCapture(app);
+  setupMapGestures();
 
   document.addEventListener('click', (ev) => {
-    const el = ev.target.closest('[data-view],[data-parcel],[data-action],[data-filter],[data-season],[data-event]');
+    if (suppressClick) { suppressClick = false; if (ev.target.closest('.farm-map')) return; }
+    const el = ev.target.closest('[data-view],[data-parcel],[data-action],[data-filter],[data-season],[data-event],[data-zoom],[data-rf-cat]');
     if (!el || el.closest('#capture')) return;
     const s = app.state;
-    if (el.dataset.action === 'log') capture.open();
+    if (el.dataset.zoom) zoomButton(el.dataset.zoom, el.dataset.mode);
+    else if (el.dataset.rfCat) { s.ui.recFilter.category = el.dataset.rfCat; render(); }
+    else if (el.dataset.action === 'rf-clear') { s.ui.recFilter = { ...EMPTY_FILTER }; render(); }
+    else if (el.dataset.action === 'log') capture.open();
     else if (el.dataset.action === 'close-drawer') { s.ui.parcel = null; render(); }
     else if (el.dataset.action === 'reset') {
       if (window.confirm('Remove the activities logged in this demo and restore the starting stock?')) {
@@ -129,11 +213,20 @@ async function start() {
     else if (el.dataset.event) { s.ui.event = s.ui.event === el.dataset.event ? null : el.dataset.event; render(); }
   });
 
+  document.addEventListener('change', (ev) => {
+    const el = ev.target;
+    if (el.dataset?.rf && !el.closest('#capture')) {
+      app.state.ui.recFilter[el.dataset.rf] = el.value;
+      render();
+    }
+  });
+
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !capture.isOpen() && app.state.ui.parcel) { app.state.ui.parcel = null; render(); }
     if (ev.key === 'Enter' && ev.target.matches?.('.field')) { app.state.ui.parcel = ev.target.dataset.parcel; render(); }
   });
 
+  window.addEventListener('resize', sizeDrawer);
   render();
 }
 

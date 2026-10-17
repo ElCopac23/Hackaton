@@ -88,6 +88,7 @@ export function timingRecs(s) {
     }
     recs.push({
       id: `timing-${job.key}`, kind: 'timing', op: 'harvest', crop: job.crop, parcels: job.remaining,
+      category: 'timing', crops: [job.crop], ops: ['harvest'], seasons: [year(s)], products: [],
       priority: 100 - daysLeft,
       title: `Harvest ${cropName(job.crop).toLowerCase()} on ${job.remaining.map(shortId).join(' and ')} (${fmt(job.remainingArea)} ha)${w.closesAfter ? ` by ${fmtDate(w.closesAfter)}` : ''}`,
       lines, goodDays: w.good, sources: ['forecast', 'records', 'rule'],
@@ -126,6 +127,9 @@ export function timingRecs(s) {
       - daysLeft - (pos ? Math.max(0, pos.daysToMedian) / 10 : 0);
     recs.push({
       id: `timing-${crop}`, kind: 'timing', op: next.op, crop, parcels: next.remaining, step: next.stepKey,
+      category: 'timing', crops: [crop], seasons: [s.assumptions.autumn_plan.season],
+      ops: next.stepKey === 'fertilise' ? ['spreading', 'sowing'] : [next.op],
+      products: [next.productId, next.stepKey === 'fertilise' ? cropJobs[1]?.productId : null].filter(Boolean),
       priority, title, lines, goodDays: w.good, sources: ['forecast', 'records', 'rule'],
     });
   }
@@ -178,6 +182,8 @@ export function stockRecs(s) {
     }
     return {
       id: `stock-${x.prod.id}`, kind: 'stock', status: x.status,
+      category: 'alert', crops: [...new Set(x.needs.map((n) => n.job.crop))], ops: [...new Set(x.needs.map((n) => n.job.op))],
+      seasons: [s.assumptions.autumn_plan.season], products: [x.prod.id], parcels: [...new Set(x.needs.flatMap((n) => n.job.remaining))],
       priority: x.status === 'critical' ? 80 : 60,
       title: `${x.status === 'critical' ? 'Critical' : 'Low'}: order ${fmtQty(x.shortfall, unit)} of ${x.prod.name}`,
       lines, sources: ['simulated', 'records'],
@@ -231,6 +237,8 @@ export function nitrogenRecs(s) {
     const area = sum(parcelsOfCrop(s, crop).map((p) => p.area_ha));
     return {
       id: `nitrogen-${crop}`, kind: 'nitrogen', crop, dir,
+      category: dir === 'in line with' ? 'info' : 'warning', crops: [crop], ops: ['spreading'],
+      seasons: [year(s), n.nextSeason], products: [], parcels: parcelsOfCrop(s, crop).map((p) => p.id),
       // Flagged crops first, larger crops first (more nitrogen at stake).
       priority: (dir === 'in line with' ? 10 : 40) + area / 10,
       title: `${cropName(crop)}: nitrogen ${dir} the regional reference`,
@@ -247,7 +255,7 @@ export function watchOuts(s) {
     const dry = wet.map((y) => y.dry_days);
     out.push({
       text: `Windows can be short: in ${wet.length} of the last ${years.length} autumns (${wet.map((y) => y.year).join(', ')}) there were only ${Math.min(...dry)}–${Math.max(...dry)} dry days between 17 Oct and 15 Nov. Use the dry days you have.`,
-      sources: ['regional'],
+      sources: ['regional'], ops: ['harvest', 'spreading', 'sowing', 'spraying'],
     });
   }
   const days = forecastDays(s);
@@ -255,11 +263,11 @@ export function watchOuts(s) {
   if (heavy.length) {
     out.push({
       text: `Heavy rain forecast on ${heavy.map((d) => `${fmtDate(d.date)} (${fmt(d.precip_mm)} mm)`).join(', ')}. Give the soil a day or two before drilling.`,
-      sources: ['forecast', 'rule'],
+      sources: ['forecast', 'rule'], ops: ['harvest', 'spreading', 'sowing'],
     });
   }
   const windy = days.filter((d) => d.wind_max_kmh > s.assumptions.thresholds.spraying.max_wind_kmh).map((d) => d.date);
-  if (windy.length) out.push({ text: `Too windy to spray on ${fmtDateRuns(windy)}.`, sources: ['forecast', 'rule'] });
+  if (windy.length) out.push({ text: `Too windy to spray on ${fmtDateRuns(windy)}.`, sources: ['forecast', 'rule'], ops: ['spraying'] });
   const tmin = Math.min(...days.map((d) => d.tmin));
   const normals = s.weather.daily_normals.days.filter((d) => days.some((x) => x.date.slice(5) === d.md));
   const frostShare = mean(normals.map((d) => d.frost_share));
@@ -267,13 +275,22 @@ export function watchOuts(s) {
     text: tmin <= 0
       ? `Frost forecast (down to ${fmt(tmin)} °C): avoid spraying on frosty mornings and check emerging crops.`
       : `No frost forecast (lowest ${fmt(tmin)} °C). ${frostShare > 0.005 ? `In past years ${fmt(frostShare * 100, 0)}% of these days had frost in the region.` : 'The regional record shows no frost on these dates in the last 10 years.'}`,
-    sources: ['forecast', 'regional'],
+    sources: ['forecast', 'regional'], ops: ['spraying', 'sowing'],
   });
   const mild = days.filter((d) => d.precip_mm >= 1 && d.tmin >= 8).map((d) => d.date);
   if (mild.length >= 2) {
-    out.push({ text: `Mild, damp days (${fmtDateRuns(mild)}): check emerging crops for slugs and disease after sowing.`, sources: ['forecast', 'rule'] });
+    out.push({
+      text: `Mild, damp days (${fmtDateRuns(mild)}): check emerging crops for slugs and disease after sowing.`,
+      sources: ['forecast', 'rule'], ops: ['sowing'], crops: s.assumptions.autumn_plan.crops,
+    });
   }
-  return out;
+  // Farm-wide warnings apply to every crop and field unless narrowed above.
+  const allCrops = cropsOnFarm(s);
+  const allFields = s.farm.parcels.map((p) => p.id);
+  return out.map((w) => ({
+    category: 'warning', crops: allCrops, seasons: [year(s), s.assumptions.autumn_plan.season], products: [],
+    ...w, parcels: allFields.filter((id) => (w.crops || allCrops).includes(parcel(s, id).crop)),
+  }));
 }
 
 export function goodDayFor(s) {
@@ -322,6 +339,19 @@ export function todaysActions(s) {
 
 export function allRecommendations(s) {
   return { timing: timingRecs(s), stock: stockRecs(s), nitrogen: nitrogenRecs(s), watch: watchOuts(s) };
+}
+
+// Recommendations page filters. Each recommendation carries category, crops, ops,
+// seasons, products and parcels; 'all' disables a filter.
+export const EMPTY_FILTER = { category: 'all', crop: 'all', op: 'all', season: 'all', product: 'all', parcel: 'all' };
+
+export function matchesFilter(rec, f) {
+  return (f.category === 'all' || rec.category === f.category)
+    && (f.crop === 'all' || (rec.crops || []).includes(f.crop))
+    && (f.op === 'all' || (rec.ops || []).includes(f.op))
+    && (f.season === 'all' || (rec.seasons || []).includes(Number(f.season)))
+    && (f.product === 'all' || (rec.products || []).includes(f.product))
+    && (f.parcel === 'all' || (rec.parcels || []).includes(f.parcel));
 }
 
 export const fieldName = (s, id) => `${shortId(id)} · ${cropName(parcel(s, id).crop)}`;

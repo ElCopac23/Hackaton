@@ -9,9 +9,9 @@ import {
 } from './model.js';
 import {
   forecastDays, evaluateDay, opWindow, timingRecs, workload, stockStatus, stockRecs, nitrogenRecs, nitrogenSummary,
-  watchOuts, goodDayFor, fieldNotes, todaysActions,
+  watchOuts, goodDayFor, fieldNotes, todaysActions, matchesFilter,
 } from './rules.js';
-import { renderMap, STATUS_LEGEND, ndviColor } from './map.js';
+import { renderMap, STATUS_LEGEND, ndviColor, mapTools } from './map.js';
 import { barChart, progressBar, stackedBar } from './charts.js';
 
 const ICONS = {
@@ -148,7 +148,7 @@ export function homeView(s) {
         <div><h2>Your fields</h2><p class="sub">${s.farm.parcels.length} fields · ${fmt(s.farm.meta.area_ha)} ha · click a field for details</p></div>
         <div class="legend">${cropsOnFarm(s).map(cropChip).join('')}</div>
       </div>
-      <div class="map-wrap">${renderMap(s, { selected: s.ui.parcel, flash: s.ui.flash })}</div>
+      <div class="map-wrap">${renderMap(s, { selected: s.ui.parcel, flash: s.ui.flash, view: s.ui.mapView.crop })}${mapTools('crop')}</div>
       <div class="map-foot">
         <div class="legend status-legend">${STATUS_LEGEND.map(([m, l]) => `<span><b>${m}</b> ${l}</span>`).join('')}</div>
         <span class="muted">Schematic layout from the dataset's local grid. Not to scale, no real location.</span>
@@ -325,7 +325,7 @@ export function ndviView(s) {
     <div class="card map-card">
       <div class="card-head"><div><h2>Farm index <span style="color:${ndviColor(avg)}">${fmt(avg, 2)}</span></h2><p class="sub">Area-weighted mean</p></div>
         <div class="ndvi-scale"><span>0.1</span><div></div><span>0.6+</span></div></div>
-      <div class="map-wrap">${renderMap(s, { mode: 'ndvi', selected: s.ui.parcel })}</div>
+      <div class="map-wrap">${renderMap(s, { mode: 'ndvi', selected: s.ui.parcel, view: s.ui.mapView.ndvi })}${mapTools('ndvi')}</div>
     </div>
     <div class="card">
       <h3>By field</h3>
@@ -373,35 +373,65 @@ export function lastView(s) {
 
 // ---------- recommendations ----------
 
+const CATEGORIES = [['all', 'All'], ['timing', 'Timing'], ['warning', 'Warnings'], ['alert', 'Alerts']];
+const STOCK_STATUS_WORD = { critical: 'critical', low: 'low', ok: 'covers plan', none: 'no planned use' };
+
+function filterBar(s, f, shown, total) {
+  const season = s.assumptions.autumn_plan.season;
+  const select = (key, label, options) => `<label class="rf"><span>${esc(label)}</span><select data-rf="${key}">${options.map(([v, l]) => (
+    `<option value="${esc(v)}" ${String(f[key]) === String(v) ? 'selected' : ''}>${esc(l)}</option>`)).join('')}</select></label>`;
+  const active = Object.values(f).filter((v) => v !== 'all').length;
+  return `<section class="card filter-bar">
+    <div class="rf-head">
+      <div class="chips rf-cats" role="group" aria-label="Kind of recommendation">${CATEGORIES.map(([v, l]) => (
+        `<button class="chip${f.category === v ? ' is-on' : ''}" data-rf-cat="${v}">${l}</button>`)).join('')}</div>
+      <span class="muted small">Showing <b>${shown}</b> of ${total} recommendations${active ? ` · ${active} filter${active > 1 ? 's' : ''} on` : ''}</span>
+    </div>
+    <div class="rf-row">
+      ${select('crop', 'Crop', [['all', 'All crops'], ...cropsOnFarm(s).map((c) => [c, cropName(c)])])}
+      ${select('op', 'Type of work', [['all', 'All work'], ...Object.entries(OP_LABELS)])}
+      ${select('season', 'Year', [['all', 'All seasons'], [String(year(s)), `${year(s)} season (harvest, results)`], [String(season), `${season} season (autumn work)`]])}
+      ${select('product', 'Stock', [['all', 'All products'], ...stockStatus(s).map((x) => [x.prod.id, `${x.prod.name} · ${STOCK_STATUS_WORD[x.status]}`])])}
+      ${select('parcel', 'Field', [['all', 'All fields'], ...s.farm.parcels.map((p) => [p.id, `${shortId(p.id)} · ${cropName(p.crop)}`])])}
+      <button class="btn ghost" data-action="rf-clear" ${active ? '' : 'disabled'}>Clear filters</button>
+    </div>
+  </section>`;
+}
+
 export function recsView(s) {
-  const timing = timingRecs(s);
-  const stock = stockRecs(s);
-  const nitrogen = nitrogenRecs(s);
-  return `
-  <section class="view-head"><h2>Recommendations</h2><p class="sub">Rule-based assistant: every advice line shows where its numbers come from. A language model is on the roadmap.</p></section>
+  const f = s.ui.recFilter;
+  const all = { timing: timingRecs(s), stock: stockRecs(s), nitrogen: nitrogenRecs(s), watch: watchOuts(s) };
+  const shown = Object.fromEntries(Object.entries(all).map(([k, list]) => [k, list.filter((r) => matchesFilter(r, f))]));
+  const total = sum(Object.values(all).map((l) => l.length));
+  const count = sum(Object.values(shown).map((l) => l.length));
+  const fieldFilterOnly = f.category === 'all' && f.op === 'all' && f.product === 'all' && f.season === 'all';
+  const fields = fieldFilterOnly ? s.farm.parcels.filter((p) => (f.crop === 'all' || p.crop === f.crop) && (f.parcel === 'all' || p.id === f.parcel)) : [];
+
+  const timingCard = shown.timing.length ? `
   <section class="card">
-    <div class="card-head"><h3>1 · Timing: what to do while the weather allows</h3><span>${badges(['forecast', 'records', 'rule'])}</span></div>
+    <div class="card-head"><h3>Timing: what to do while the weather allows</h3><span>${badges(['forecast', 'records', 'rule'])}</span></div>
     ${workloadBox(s)}
-    <div class="rec-grid">${timing.map((r, i) => recCard(r, { index: i + 1 })).join('') || '<p class="empty">No autumn jobs left.</p>'}</div>
-  </section>
-  <section class="grid-2">
-    <div class="card">
-      <h3>2 · Stock</h3>
-      <div class="rec-list">${stock.map((r) => recCard(r)).join('') || '<p class="empty">Stock covers every planned job ✓</p>'}</div>
+    <div class="rec-grid">${shown.timing.map((r) => recCard(r, { index: all.timing.indexOf(r) + 1 })).join('')}</div>
+  </section>` : '';
+  const stockCard = shown.stock.length ? `<div class="card">
+      <h3>Stock alerts</h3>
+      <div class="rec-list">${shown.stock.map((r) => recCard(r)).join('')}</div>
       <button class="link-btn" data-view="inventory">Open inventory →</button>
-    </div>
-    <div class="card">
-      <h3>3 · Nitrogen against your history and the region</h3>
-      <div class="rec-list">${nitrogen.map((r) => recCard(r, { compact: true })).join('')}</div>
-    </div>
-  </section>
+    </div>` : '';
+  const nitrogenCard = shown.nitrogen.length ? `<div class="card">
+      <h3>Nitrogen against your history and the region</h3>
+      <div class="rec-list">${shown.nitrogen.map((r) => recCard(r, { compact: true })).join('')}</div>
+    </div>` : '';
+  const pair = stockCard && nitrogenCard ? `<section class="grid-2">${stockCard}${nitrogenCard}</section>` : (stockCard || nitrogenCard);
+  const watchCard = shown.watch.length ? `
   <section class="card">
-    <h3>Watch-outs</h3>
-    <ul class="watch">${watchOuts(s).map((x) => `<li>${esc(x.text)} ${badges(x.sources)}</li>`).join('')}</ul>
-  </section>
+    <h3>Weather warnings</h3>
+    <ul class="watch">${shown.watch.map((x) => `<li>${esc(x.text)} ${badges(x.sources)}</li>`).join('')}</ul>
+  </section>` : '';
+  const fieldsCard = fields.length ? `
   <section class="card">
     <h3>By field</h3>
-    <div class="field-grid">${s.farm.parcels.map((p) => {
+    <div class="field-grid">${fields.map((p) => {
       const st = parcelStatus(s, p);
       const notes = fieldNotes(s, p).slice(0, 2);
       return `<button class="field-card" data-parcel="${p.id}">
@@ -410,7 +440,12 @@ export function recsView(s) {
         ${notes.map((n) => `<span class="fc-note">${esc(n.text)}</span>`).join('')}
       </button>`;
     }).join('')}</div>
-  </section>`;
+  </section>` : '';
+
+  return `
+  <section class="view-head"><h2>Recommendations</h2><p class="sub">Rule-based assistant: every advice line shows where its numbers come from. A language model is on the roadmap.</p></section>
+  ${filterBar(s, f, count, total)}
+  ${count || fields.length ? `${timingCard}${pair}${watchCard}${fieldsCard}` : '<section class="card"><p class="empty">No recommendations match these filters. <button class="link-btn" data-action="rf-clear">Clear filters</button></p></section>'}`;
 }
 
 // ---------- inventory ----------

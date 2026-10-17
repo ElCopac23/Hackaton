@@ -3,7 +3,16 @@
 import { CROPS, esc, fmt, cropName, shortId } from './util.js';
 import { parcelStatus, ndviFor } from './model.js';
 
+let cached = null;
+
 function layout(parcels) {
+  if (cached && cached.parcels === parcels) return cached.result;
+  const result = computeLayout(parcels);
+  cached = { parcels, result };
+  return result;
+}
+
+function computeLayout(parcels) {
   const items = parcels.map((p) => ({ p, cx: p.x + p.side_m / 2, cy: p.y + p.side_m / 2, side: p.side_m }));
   // Enlarge every square by the same factor so the median field spans ~14% of the farm,
   // then push overlapping squares apart. Positions stay roughly where the data puts them.
@@ -46,10 +55,10 @@ function layout(parcels) {
   const maxX = Math.max(...items.map((it) => it.cx + half(it)));
   const minY = Math.min(...items.map((it) => it.cy - half(it)));
   const maxY = Math.max(...items.map((it) => it.cy + half(it)));
-  const pad = 0.04 * extent;
+  const pad = 0.03 * extent;
   return {
     k,
-    viewBox: `${minX - pad} 0 ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}`,
+    fit: { x: minX - pad, y: 0, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad },
     rects: items.map((it) => ({
       ...it, s: it.side * k, x: it.cx - half(it), y: maxY + pad - (it.cy + half(it)),
     })),
@@ -67,8 +76,30 @@ export function ndviColor(v) {
 
 const STATUS_MARK = { standing: '▲', 'to-sow': '○', prepared: '◐', sown: '●', fallow: '–' };
 
-export function renderMap(s, { mode = 'crop', selected = null, flash = [] } = {}) {
-  const { viewBox, rects } = layout(s.farm.parcels);
+// Whole-farm view box, and zoom helpers that keep the view inside sensible limits.
+export const mapFit = (s) => layout(s.farm.parcels).fit;
+
+export function clampView(s, v) {
+  const fit = mapFit(s);
+  const w = Math.min(fit.w * 1.15, Math.max(fit.w / 8, v.w));
+  const h = (w / v.w) * v.h;
+  const cx = Math.min(fit.x + fit.w, Math.max(fit.x, v.x + v.w / 2));
+  const cy = Math.min(fit.y + fit.h, Math.max(fit.y, v.y + v.h / 2));
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+export function zoomView(s, view, factor, at = null) {
+  const v = view || mapFit(s);
+  const px = at ? at.x : v.x + v.w / 2;
+  const py = at ? at.y : v.y + v.h / 2;
+  return clampView(s, { x: px - (px - v.x) * factor, y: py - (py - v.y) * factor, w: v.w * factor, h: v.h * factor });
+}
+
+export const viewBoxOf = (v) => `${v.x} ${v.y} ${v.w} ${v.h}`;
+
+export function renderMap(s, { mode = 'crop', selected = null, flash = [], view = null } = {}) {
+  const { fit, rects } = layout(s.farm.parcels);
+  const viewBox = viewBoxOf(view || fit);
   const patterns = Object.entries(CROPS).map(([code, c]) => `
     <pattern id="stub-${code}" patternUnits="userSpaceOnUse" width="36" height="36" patternTransform="rotate(45)">
       <rect width="36" height="36" fill="${c.color}"/><rect width="13" height="36" fill="#fff" opacity="0.42"/>
@@ -95,11 +126,20 @@ export function renderMap(s, { mode = 'crop', selected = null, flash = [] } = {}
       ${mode === 'ndvi' ? '' : `<text x="${r.x + r.s * 0.93}" y="${r.y + r.s * 0.07 + fs}" class="field-mark" font-size="${fs}" text-anchor="end">${STATUS_MARK[st.code] || ''}</text>`}
     </g>`;
   }).join('');
-  return `<svg class="farm-map" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Schematic map of the farm's fields">
+  return `<svg class="farm-map" data-mode="${mode}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Schematic map of the farm's fields">
     <defs>${patterns}</defs>
     <rect class="map-bg" x="-100000" y="-100000" width="200000" height="200000"/>
     ${shapes}
   </svg>`;
+}
+
+export function mapTools(mode) {
+  return `<div class="map-tools" role="group" aria-label="Map zoom">
+    <button class="icon-btn" data-zoom="in" data-mode="${mode}" title="Zoom in" aria-label="Zoom in">+</button>
+    <button class="icon-btn" data-zoom="out" data-mode="${mode}" title="Zoom out" aria-label="Zoom out">−</button>
+    <button class="icon-btn fit" data-zoom="fit" data-mode="${mode}" title="Show the whole farm" aria-label="Show the whole farm">⤢</button>
+  </div>
+  <div class="map-hint">Scroll to zoom · drag to move</div>`;
 }
 
 export const STATUS_LEGEND = [
