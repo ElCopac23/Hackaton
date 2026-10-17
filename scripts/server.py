@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import socket
+import subprocess
 import threading
 import time
 import uuid
@@ -76,6 +77,41 @@ def lan_ip():
             return s.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+TAILSCALE_CLI = ("/Applications/Tailscale.app/Contents/MacOS/Tailscale", "tailscale")
+_ts_cache = {"at": 0.0, "url": None}
+
+
+def tailscale_url():
+    """https address of this Mac on the Tailscale network, if `tailscale serve` publishes the server."""
+    if time.time() - _ts_cache["at"] < 30:
+        return _ts_cache["url"]
+    url = None
+    for cli in TAILSCALE_CLI:
+        try:
+            status = json.loads(subprocess.run([cli, "status", "--json"], capture_output=True, text=True, timeout=5).stdout)
+            serve = json.loads(subprocess.run([cli, "serve", "status", "--json"], capture_output=True, text=True, timeout=5).stdout or "{}")
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        dns = (status.get("Self") or {}).get("DNSName", "").rstrip(".")
+        if dns and status.get("CertDomains") and "443" in (serve.get("TCP") or {}):
+            url = f"https://{dns}/app/"
+        break
+    _ts_cache.update(at=time.time(), url=url)
+    return url
+
+
+def tailscale_http_url(port, key):
+    """Plain-http link through Tailscale: works on any network, without the https extras."""
+    for cli in TAILSCALE_CLI:
+        try:
+            status = json.loads(subprocess.run([cli, "status", "--json"], capture_output=True, text=True, timeout=5).stdout)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        dns = (status.get("Self") or {}).get("DNSName", "").rstrip(".")
+        return f"http://{dns}:{port}/app/?k={key}" if dns else None
+    return None
 
 
 def load_key():
@@ -162,7 +198,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/info":
             if not self.is_local():
                 return self.send_json({"lan": self.lan})
-            return self.send_json({"lan": self.lan, "phoneUrl": self.phone_url})
+            # Requests through `tailscale serve` arrive from this Mac, so the private https
+            # address needs no key: only devices signed in to your Tailscale network reach it.
+            # Recomputed on every request: the Mac's Wi-Fi address changes when it joins another network.
+            port = self.server.server_address[1]
+            wifi = f"http://{lan_ip()}:{port}/app/?k={self.key}" if self.lan else None
+            return self.send_json({"lan": self.lan, "phoneUrl": wifi, "tailscaleUrl": tailscale_url(),
+                                   "tailscaleHttpUrl": tailscale_http_url(port, self.key) if self.lan else None})
         if path == "/api/events":
             return self.stream_events()
         if path.startswith("/photos/"):
@@ -269,6 +311,9 @@ def main():
     server.daemon_threads = True
     print(f"DemetrAg farm home:  http://127.0.0.1:{args.port}/")
     print(f"Phone app (this Mac): http://127.0.0.1:{args.port}/app/")
+    ts = tailscale_url()
+    if ts:
+        print(f"Phone app (iPhone on your Tailscale network, https): {ts}")
     if args.lan:
         print(f"Phone app (iPhone on the same Wi-Fi): {Handler.phone_url}")
     else:

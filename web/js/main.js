@@ -165,12 +165,14 @@ async function showPhoneLink() {
   let body;
   if (!info) {
     body = '<p>The sync server is not running, so the phone cannot connect.</p><p>Start it with <code>python3 scripts/server.py --lan</code> and reload this page.</p>';
-  } else if (!info.phoneUrl) {
+  } else if (!info.phoneUrl && !info.tailscaleUrl && !info.tailscaleHttpUrl) {
     body = '<p>The server only accepts this Mac. Restart it with <code>python3 scripts/server.py --lan</code> so the iPhone can connect over Wi-Fi.</p>';
   } else {
-    body = `<p>On the iPhone (same Wi-Fi), open this link in <b>Safari</b>:</p>
-      <div class="phone-url"><code>${esc(info.phoneUrl)}</code><button class="btn ghost" data-action="copy-phone" data-url="${esc(info.phoneUrl)}">Copy</button></div>
-      <ol><li>Send it to the phone (AirDrop, Messages or Notes), or type it in Safari.</li>
+    const link = (url) => `<div class="phone-url"><code>${esc(url)}</code><button class="btn ghost" data-action="copy-phone" data-url="${esc(url)}">Copy</button></div>`;
+    body = `${info.tailscaleUrl ? `<p><b>Anywhere, secure (Tailscale):</b> works on Wi-Fi or mobile data, with the in-app microphone. The iPhone needs Tailscale switched on.</p>${link(info.tailscaleUrl)}` : ''}
+      ${!info.tailscaleUrl && info.tailscaleHttpUrl ? `<p><b>Anywhere (Tailscale):</b> works on any Wi-Fi or mobile data while Tailscale is on, on the Mac and the iPhone. Voice: use the keyboard's microphone key.</p>${link(info.tailscaleHttpUrl)}` : ''}
+      ${info.phoneUrl ? `<p>${info.tailscaleUrl || info.tailscaleHttpUrl ? '<b>Backup, same Wi-Fi only:</b>' : 'On the iPhone (same Wi-Fi), open this link in <b>Safari</b>:'}</p>${link(info.phoneUrl)}` : ''}
+      <ol><li>Send the link to the phone (AirDrop, Messages or Notes), or type it in Safari.</li>
       <li>Tap the Share button, then <b>Add to Home Screen</b>.</li>
       <li>Open <b>DemetrAg</b> from the home screen. What you record there appears here live.</li></ol>`;
   }
