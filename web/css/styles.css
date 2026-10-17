@@ -450,7 +450,7 @@ th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align
 .notes-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 .notes-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .notes-side { position: sticky; top: calc(var(--top) + 18px); }
-.ngrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.ngrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; align-items: start; }
 .ncard { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; cursor: default; }
 .ncard[data-parcel] { cursor: pointer; }
 .ncard[data-parcel]:hover { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }

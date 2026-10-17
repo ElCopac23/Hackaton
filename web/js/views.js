@@ -70,6 +70,7 @@ function navStatus(s) {
   const top = todaysActions(s)[0];
   const alerts = stockStatus(s).filter((x) => x.status === 'low' || x.status === 'critical');
   const notes = allNotes(s);
+  const photos = notes.filter((n) => n.photo).length;
   return {
     home: [`${s.farm.parcels.length} fields · ${fmt(s.farm.meta.area_ha)} ha`],
     weather: [`${w.icon} ${fmt(d0.tmax, 0)}° · ${w.text}`],
@@ -78,7 +79,7 @@ function navStatus(s) {
     recs: [top ? top.title : 'Nothing urgent'],
     inventory: !stockTracked(s) ? ['Not tracked yet'] : [alerts.length ? `${alerts.length} alert${alerts.length > 1 ? 's' : ''}` : 'Covers the plan', alerts.length ? 'alert' : ''],
     economics: [hasAccounts(s) ? `${fmtEur(pnl(s).last.fnva)} net value added` : 'Estimate'],
-    notes: [`${notes.length} note${notes.length === 1 ? '' : 's'} · ${notes.filter((n) => n.photo).length} photos`],
+    notes: [`${notes.length} note${notes.length === 1 ? '' : 's'} · ${photos} photo${photos === 1 ? '' : 's'}`],
   };
 }
 

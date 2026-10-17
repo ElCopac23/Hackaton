@@ -1,15 +1,19 @@
 # DemetrAg: farm home (hackathon prototype)
 
-EU Agri Hackathon 2026, Challenge 2. One farm (FARM-00455, synthetic, Loiret FRB06, 86.2 ha, 14 fields).
-The farm home shows the farm today, lets the farmer log an activity by text or voice, and turns the
-records into advice: timing first, then stock, then nitrogen.
+EU Agri Hackathon 2026, Challenge 2. Two synthetic farms in Loiret (FRB06):
+
+- **FARM-00455** (86.2 ha, 14 fields): full records, accounts, CAP payments and stock.
+- **FARM-00268** (40.9 ha, 7 fields): a farmer onboarded through the questionnaire, so only fields and 2026 crops.
+
+The farm home (office) and the phone app (field) show the farm today, let the farmer log work by text or voice,
+add notes and photos, and turn it all into advice with its euro value: timing first, then stock, then nitrogen.
 
 ## Run it
 
 No install needed (Python 3; Chrome or Safari).
 
 ```bash
-python3 scripts/build_data.py          # dataset CSVs -> web/data/farm.json, weather.json (about 40 s)
+python3 scripts/build_data.py          # dataset CSVs -> web/data/farms/*.json, weather.json (about 40 s)
 python3 scripts/server.py --lan        # farm home + phone app + live sync
 ```
 
@@ -59,6 +63,23 @@ roadmap step: same API, Vercel functions plus a managed store, farm data behind 
 
 ## Demo path
 
+**New in v3** (branch `dev_v3`):
+
+1. Top bar: switch between the two farms (the ring shows how complete each profile is).
+2. **Economics** (sidebar; Farm → Money on the phone): 2026 accounts against the 10-season average, where the
+   money goes, CAP payments by scheme, sales against the market price, the euro value of each piece of advice,
+   the 2027 scenario ("business as usual" vs "follow the advice", price and yield sliders) and the return on
+   DemetrAg (€3/ha up to 100 ha, €4/ha up to 250 ha, €5/ha up to 500 ha).
+3. **Onboarding** (top right; sparkle button on the phone): upload any files and watch the simulated agent sort
+   them, or answer the questions (fields and crops required, the rest optional). "Use demo answers" fills in
+   FARM-00268; finishing opens it.
+4. **FARM-00268**: map, sowing window for its winter crops, notes, logging (no stock tracked), and an economics
+   estimate from similar Loiret farms with "add data" prompts.
+5. **Notes** (sidebar, with the latest three pinned below the menu; Notes tab on the phone): a gallery of notes
+   and photos, filterable by field and topic.
+
+**v2 path:**
+
 1. Farm home: assistant shows the maize harvest window and the autumn workload; NPK stock is low.
 2. Click a wheat field (P-5182): soil, 10 seasons of yield and nitrogen, timeline.
 3. Log activity → "Applied 100 kg of complex fertiliser before wheat sowing for all fields".
@@ -80,6 +101,13 @@ roadmap step: same API, Vercel functions plus a managed store, farm data behind 
 | Forecast | Open-Meteo API, CC BY 4.0, snapshot | Open data |
 | Stock, autumn plan, thresholds, field notes | `web/data/stock.json`, `web/data/assumptions.json` | Simulated, set by the team |
 | NDVI | Derived from field status | Simulated (the dataset has no satellite data) |
+| Accounts, CAP payments, sales | `synthetic_farm_economics`, `_subsidy`, `_transaction_sale`, `_farm_indicator` | Dataset (synthetic) |
+| Crop prices | `synthetic_market_price` (latest month up to 17 Oct 2026) | Dataset (synthetic) |
+| Unit costs (seed €/kg, nutrients €/kg, crop protection €/L) | Accounts 2022-2026 ÷ quantities in the farm's own records | Derived from the dataset |
+| Similar farms (FARM-00268 estimate) | Median yields and €/ha of 273 synthetic arable farms in FRB06 | Dataset (synthetic) |
+| Euro loss rates (late sowing, standing maize, untreated pests), DemetrAg price | `web/data/assumptions.json` → `economics` | Rules of thumb, set by the team |
+| FARM-00268 profile | Fields and 2026 crops only, as if answered in onboarding | Dataset (synthetic), rest ignored |
+| Onboarding agent | Scripted result from the file types | Simulated (files stay in the browser) |
 
 63 operations dated after the same season's harvest are left out as implausible; growth stages (BBCH) are not
 shown because they often contradict the dates.
@@ -104,16 +132,18 @@ Notes (text or dictated) and photos can be added per field or for the whole farm
 "Add a note or photo" on a field) or on the farm home (field panel). The assistant reads each note for topics,
 from the tags picked and from words in the text: pests, disease, weeds, waterlogging, dry soil, emergence,
 machinery. Each topic becomes advice for that field, combined with the forecast and the open jobs
-(`web/js/notes.js`), shown on Today/Assistant, the field panel, Recommendations (filterable) and Last
-activities. Repeated reports on the same field raise the priority. Photos are stored and shown with the note;
+(`web/js/notes.js`), shown on Today, the field panel, Advice (filterable), the Notes gallery and the activity
+timeline. Repeated reports on the same field raise the priority. Photos are stored and shown with the note;
 they are not analysed by AI (image recognition is on the roadmap).
 
 ## Screens
 
 - Farm home fills the screen: the map can be zoomed (+ / − / fit buttons, mouse wheel) and dragged.
-  Clicking a field opens a panel that covers the "Assistant · today" column.
-- Recommendations can be filtered by kind (timing, warnings, alerts), crop, type of work, year (season),
-  stock product and field.
+  Clicking a field opens a panel that covers the "Today" column.
+- Sidebar: Home, Weather, Activities (log and timeline), NDVI, Advice, Stock, Economics, Notes, and the latest notes.
+- Advice can be filtered by kind (timing, warnings, alerts), crop, type of work, season, stock product and field.
+- Sources are small icons on each card (hover or tap for details); the full list is under "⋯ → Data sources".
+- Phone app tabs: Today (next job and its euro value), Fields, Record, Notes (gallery), Farm (Money, Stock, Profile).
 
 ## How the advice works
 
@@ -134,5 +164,5 @@ on the Mac (audio is processed by Google's speech service), iOS keyboard dictati
 speech service), Open-Meteo forecast API. App icons drawn by `scripts/make_icons.py`. Code written with an AI coding
 assistant (Claude Code) during the hackathon.
 
-Do not publish `web/data/farm.json`, `weather.json` or `forecast_snapshot.json`: they are derived from the
+Do not publish `web/data/farms/`, `weather.json` or `forecast_snapshot.json`: they are derived from the
 hackathon dataset (see `.gitignore`).

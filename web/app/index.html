@@ -8,7 +8,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="DemetrAg">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="theme-color" content="#F4F2EC">
+  <meta name="theme-color" content="#F4F6F3">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="icon" href="icons/icon-192.png">
@@ -19,9 +19,12 @@
   <header class="m-top">
     <div class="m-brand">
       <img src="icons/icon-180.png" alt="" class="m-logo">
-      <div><div class="m-name">DemetrAg</div><div class="m-farm" id="m-farm">Loading…</div></div>
+      <button class="m-farm-btn" id="m-farm-btn" data-farms aria-label="Switch farm"><span class="m-name">DemetrAg</span><span class="m-farm">Loading…</span></button>
     </div>
-    <span class="live live-local" id="live">…</span>
+    <div class="m-top-right">
+      <span class="live live-local" id="live">…</span>
+      <button class="icon-btn m-onb-btn" data-action="onboarding" aria-label="Onboarding: add farm data"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg></button>
+    </div>
   </header>
 
   <main class="m-main" id="m-main"><p class="m-loading">Loading the farm…</p></main>
@@ -30,13 +33,15 @@
   </section>
 
   <nav class="m-tabs" aria-label="Sections">
-    <button data-tab="today" class="is-on"><span>☀️</span>Today</button>
-    <button data-tab="fields"><span>🗺️</span>Fields</button>
-    <button data-tab="record" class="m-tab-record"><span>🎙</span>Record</button>
-    <button data-tab="notes"><span>📝</span>Notes</button>
-    <button data-tab="stock"><span>📦</span>Stock</button>
+    <button data-tab="today" class="is-on"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>Today</button>
+    <button data-tab="fields"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg>Fields</button>
+    <button data-tab="record" class="m-tab-record"><span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span>Record</button>
+    <button data-tab="notes"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4M8.5 12h7M8.5 16h5"/></svg>Notes</button>
+    <button data-tab="farm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V10l5-4 5 4v11"/><path d="M13 21V8l4-3 4 3v13"/><path d="M6.5 21v-5h3v5M2 21h20"/></svg>Farm</button>
   </nav>
 
+  <div id="m-sheet" class="m-sheet" hidden></div>
+  <div id="m-onboarding" class="m-onb" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="app.js"></script>
 </body>
