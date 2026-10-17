@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DemetrAg</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="DemetrAg">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#F4F2EC">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="m-body">
+  <header class="m-top">
+    <div class="m-brand">
+      <img src="icons/icon-180.png" alt="" class="m-logo">
+      <div><div class="m-name">DemetrAg</div><div class="m-farm" id="m-farm">Loading…</div></div>
+    </div>
+    <span class="live live-local" id="live">…</span>
+  </header>
+
+  <main class="m-main" id="m-main"><p class="m-loading">Loading the farm…</p></main>
+  <section class="m-record" id="m-record" hidden>
+    <div id="record-root"></div>
+  </section>
+
+  <nav class="m-tabs" aria-label="Sections">
+    <button data-tab="today" class="is-on"><span>☀️</span>Today</button>
+    <button data-tab="fields"><span>🗺️</span>Fields</button>
+    <button data-tab="record" class="m-tab-record"><span>🎙</span>Record</button>
+    <button data-tab="notes"><span>📝</span>Notes</button>
+    <button data-tab="stock"><span>📦</span>Stock</button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

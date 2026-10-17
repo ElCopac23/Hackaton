@@ -21,7 +21,9 @@
     </div>
     <div class="top-right">
       <span class="today" id="today"></span>
+      <span class="live live-local" id="live">…</span>
       <span class="log-count" id="log-count"></span>
+      <button class="btn ghost" data-action="phone">📱 Phone app</button>
       <button class="btn ghost" id="reset" data-action="reset" hidden>Reset demo</button>
       <button class="btn primary" data-action="log">🎙 Log activity</button>
     </div>
@@ -33,6 +35,7 @@
   </div>
 
   <aside id="drawer" class="drawer" aria-label="Field details"></aside>
+  <div id="phone-panel" class="phone-panel" hidden></div>
   <div id="capture" class="modal" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -42,7 +45,7 @@
     Regional weather history: AgERA5 reanalysis (Copernicus licence), via the dataset.
     Regional nitrogen reference: NPKGRIDS (CC BY 4.0), via the dataset.
     Forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), snapshot.
-    Simulated for the demo: opening stock, autumn plan, field notes, NDVI.
+    Simulated for the demo: opening stock, autumn plan, sample field notes, NDVI. Notes and photos you add stay on the sync server on this Mac.
     Advice is rule-based; thresholds are rules of thumb to be confirmed by an adviser.
   </footer>
 

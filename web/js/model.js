@@ -162,7 +162,11 @@ export function lastActivities(s, limit = 18) {
   const t = today(s);
   const evs = allEvents(s).filter((e) => e.status === 'done' && e.date <= t).map((e) => ({ ...e, kind: 'event' }));
   const notes = s.assumptions.simulated_notes.map((n, i) => ({ ...n, noteKind: n.kind, id: `note-${i}`, kind: 'note', source: 'simulated' }));
-  return [...evs, ...notes]
+  const logged = (s.notes || []).map((n) => ({
+    ...n, id: `user-note-${n.id}`, kind: 'note', noteKind: n.device === 'phone' ? 'Note from phone' : 'Note',
+    parcel: n.target && n.target !== 'farm' ? n.target : null, date: n.date || (n.created_at || '').slice(0, 10), source: 'captured',
+  }));
+  return [...evs, ...notes, ...logged]
     .sort((a, b) => b.date.localeCompare(a.date) || (b.source === 'captured') - (a.source === 'captured'))
     .slice(0, limit);
 }

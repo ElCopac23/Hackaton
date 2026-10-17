@@ -5,3 +5,4 @@ web/data/weather.json
 web/data/forecast_snapshot.json
 __pycache__/
 .DS_Store
+server-data/

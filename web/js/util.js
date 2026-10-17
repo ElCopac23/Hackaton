@@ -27,6 +27,7 @@ export const SOURCES = {
   forecast: { label: 'Forecast', title: 'Open-Meteo forecast snapshot' },
   simulated: { label: 'Simulated', title: 'Simulated for the demo, not in the dataset' },
   rule: { label: 'Rule of thumb', title: 'Threshold set by the team, to be confirmed by an adviser' },
+  note: { label: 'Your notes', title: 'From notes and photos logged on the phone or the farm home' },
 };
 
 export const cropName = (c) => CROPS[c]?.name ?? c;
@@ -132,3 +133,7 @@ export function weatherIcon(code) {
 }
 
 export const shortId = (parcelId) => `P-${parcelId.slice(-4)}`;
+
+// Where photos are served from: '' on the farm home, '../' in the phone app.
+export const assets = { base: '' };
+export const photoSrc = (photo) => (!photo ? '' : photo.startsWith('data:') ? photo : `${assets.base}${photo}`);

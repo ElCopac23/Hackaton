@@ -22,9 +22,11 @@ const OPS = [['fertilisation', 'Fertiliser application'], ['spraying', 'Spraying
 const LONG_KEY = 'demetrag-long-voice';
 const MAX_RECORDING_MS = 3 * 60 * 1000;
 
-export function createCapture(app) {
-  const root = document.getElementById('capture');
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// embedded: the phone app shows the dialog inline (always open) instead of as a pop-up.
+export function createCapture(app, { root = document.getElementById('capture'), embedded = false } = {}) {
+  // In-app speech needs a secure page (https or this Mac). Over plain Wi-Fi http the iPhone
+  // keyboard's own dictation key still works in the text box.
+  const SR = window.isSecureContext ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
   let draft = null;
   let messages = [];
   let question = null;
@@ -49,7 +51,7 @@ export function createCapture(app) {
     fromVoice = false;
     root.hidden = false;
     render();
-    root.querySelector('textarea')?.focus();
+    if (!embedded) root.querySelector('textarea')?.focus();
   }
 
   function stopListening() {
@@ -61,6 +63,7 @@ export function createCapture(app) {
 
   function close() {
     stopListening();
+    if (embedded) { open(); return; }
     root.hidden = true;
     root.innerHTML = '';
   }
@@ -197,9 +200,9 @@ export function createCapture(app) {
 
   function render() {
     const complete = draft && !question;
-    root.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="Log an activity">
-      <div class="modal-head"><div><h2>Log an activity</h2><p class="sub">Rule-based assistant · works without an AI service</p></div>
-        <button class="icon-btn" data-cap="close" aria-label="Close">✕</button></div>
+    root.innerHTML = `<div class="modal-box${embedded ? ' is-embedded' : ''}" ${embedded ? '' : 'role="dialog" aria-modal="true"'} aria-label="Log an activity">
+      <div class="modal-head"><div><h2>${embedded ? 'Record what you did' : 'Log an activity'}</h2><p class="sub">Rule-based assistant · works without an AI service</p></div>
+        ${embedded ? (draft ? '<button class="btn ghost" data-cap="restart">New</button>' : '') : '<button class="icon-btn" data-cap="close" aria-label="Close">✕</button>'}</div>
       <div class="convo">${messages.map((m) => `<div class="msg msg-${m.from}">${m.from === 'farmer' && m.channel === 'voice' ? '<span class="via">🎙 voice</span>' : ''}${m.html}</div>`).join('')}
         ${question ? `<div class="answers">${question.options.map((o, i) => `<button class="chip" data-answer="${i}">${esc(o.label)}</button>`).join('')}</div>` : ''}
       </div>
@@ -207,11 +210,12 @@ export function createCapture(app) {
       ${recBar()}
       <div class="composer">
         <textarea rows="${longMode ? 3 : 2}" placeholder="e.g. Applied 100 kg per hectare of complex fertiliser on the wheat fields today">${esc(pending)}</textarea>
-        <button class="icon-btn mic${listening ? ' is-on' : ''}" data-cap="mic" ${SR ? '' : 'disabled title="Voice input needs Chrome"'} aria-label="${listening ? 'Stop recording' : 'Speak'}">${listening ? '■' : '🎙'}</button>
+        ${SR ? `<button class="icon-btn mic${listening ? ' is-on' : ''}" data-cap="mic" aria-label="${listening ? 'Stop recording' : 'Speak'}">${listening ? '■' : '🎙'}</button>` : ''}
         <button class="btn primary" data-cap="send">Send</button>
       </div>
-      <label class="long-toggle"><input type="checkbox" data-cap-long ${longMode ? 'checked' : ''} ${SR ? '' : 'disabled'}>
-        Long recording: keep listening through pauses until I press stop (up to 3 minutes)</label>
+      ${SR ? `<label class="long-toggle"><input type="checkbox" data-cap-long ${longMode ? 'checked' : ''}>
+        Long recording: keep listening through pauses until I press stop (up to 3 minutes)</label>`
+    : '<div class="dictate-hint">🎙 To speak: tap the text box, then the <b>microphone key</b> on the keyboard. Dictate as long as you like, then Send.</div>'}
       ${draft ? '' : `<div class="examples"><span class="muted small">Try:</span>${EXAMPLES.map((e, i) => `<button class="chip" data-example="${i}">${esc(e)}</button>`).join('')}</div>`}`}
     </div>`;
     const convo = root.querySelector('.convo');
@@ -303,8 +307,8 @@ export function createCapture(app) {
     });
     const adjust = prod ? { [prod.id]: -total } : {};
     const what = draft.type === 'harvest' ? 'Harvest' : prod.name;
-    app.commit({ events, adjust, flash: draft.parcels, message: `${what} saved to ${events.length} field${events.length > 1 ? 's' : ''}. Stock and advice updated.` });
-    close();
+    Promise.resolve(app.commit({ events, adjust, flash: draft.parcels, message: `${what} saved to ${events.length} field${events.length > 1 ? 's' : ''}. Stock and advice updated.` }))
+      .finally(() => close());
   }
 
   root.addEventListener('click', (ev) => {
@@ -331,7 +335,7 @@ export function createCapture(app) {
       if (listening) stopListening();
       send(ev.target.value);
     }
-    if (ev.key === 'Escape') close();
+    if (ev.key === 'Escape' && !embedded) close();
   });
 
   root.addEventListener('change', (ev) => {

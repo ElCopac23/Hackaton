@@ -5,6 +5,7 @@ import {
 import {
   today, autumnJobs, parcelsOfCrop, parcel, product, stockLevel, allEvents, cropsOnFarm, year,
 } from './model.js';
+import { noteInsights } from './notes.js';
 
 export const forecastDays = (s) => s.weather.forecast.days.filter((d) => d.date >= today(s));
 
@@ -298,7 +299,8 @@ export function goodDayFor(s) {
 }
 
 export function fieldNotes(s, p) {
-  const notes = [];
+  const notes = noteInsights(s).filter((r) => r.parcels.includes(p.id) && r.crop)
+    .map((r) => ({ text: `${r.title}. ${r.lines.slice(1, 2).join(' ')}`, sources: r.sources }));
   const job = autumnJobs(s).filter((j) => j.parcels.includes(p.id) && j.remaining.includes(p.id))
     .sort((a, b) => a.stepIndex - b.stepIndex)[0];
   if (job) {
@@ -328,17 +330,18 @@ export function fieldNotes(s, p) {
   return notes;
 }
 
-// Top of the home page: timing first (the team's priority), then the most
-// urgent stock alert, otherwise the strongest nitrogen signal.
+// Top of the home page: timing first (the team's priority), then the latest thing the
+// farmer reported in a note (if any), then the most urgent stock alert, otherwise nitrogen.
 export function todaysActions(s) {
   const timing = timingRecs(s);
   const stock = stockRecs(s).sort((a, b) => b.priority - a.priority);
-  const third = stock[0] || nitrogenRecs(s)[0];
-  return [...timing.slice(0, 2), third].filter(Boolean);
+  const fromNotes = noteInsights(s)[0];
+  const last = stock[0] || nitrogenRecs(s)[0];
+  return [...timing.slice(0, 2), fromNotes, last].filter(Boolean);
 }
 
 export function allRecommendations(s) {
-  return { timing: timingRecs(s), stock: stockRecs(s), nitrogen: nitrogenRecs(s), watch: watchOuts(s) };
+  return { timing: timingRecs(s), stock: stockRecs(s), nitrogen: nitrogenRecs(s), notes: noteInsights(s), watch: watchOuts(s) };
 }
 
 // Recommendations page filters. Each recommendation carries category, crops, ops,

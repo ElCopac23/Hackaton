@@ -1,12 +1,16 @@
-import { fmtLongDate, fmt } from './util.js';
+import { fmtLongDate, fmt, esc, shortId } from './util.js';
 import {
   sidebar, homeView, weatherView, activitiesView, ndviView, lastView, recsView, inventoryView, fieldDrawer,
 } from './views.js';
 import { createCapture } from './capture.js';
 import { zoomView, clampView, viewBoxOf } from './map.js';
 import { EMPTY_FILTER } from './rules.js';
+import { connectSync, resizePhoto } from './sync.js';
+import { today } from './model.js';
 
-const STORE = 'farm-assistant-demo-v1';
+// Identifies this open page, so it does not announce its own changes as news.
+const CLIENT = Math.random().toString(36).slice(2, 10);
+let sync = null;
 const VIEWS = {
   home: homeView, weather: weatherView, activities: activitiesView, ndvi: ndviView,
   last: lastView, recs: recsView, inventory: inventoryView,
@@ -15,6 +19,7 @@ const VIEWS = {
 const app = {
   state: null,
   commit,
+  device: 'web',
 };
 
 async function loadJson(name) {
@@ -23,20 +28,43 @@ async function loadJson(name) {
   return res.json();
 }
 
-function restore(state) {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-    if (saved) {
-      state.captured = saved.captured || [];
-      state.stockAdjust = saved.stockAdjust || {};
-    }
-  } catch { /* storage unavailable: start from the seed data */ }
+function applyShared(next) {
+  const s = app.state;
+  s.captured = next.captured || [];
+  s.stockAdjust = next.stockAdjust || {};
+  s.notes = next.notes || [];
 }
 
-function persist() {
-  try {
-    localStorage.setItem(STORE, JSON.stringify({ captured: app.state.captured, stockAdjust: app.state.stockAdjust }));
-  } catch { /* the demo still works for this session */ }
+function setLive(status) {
+  const el = document.getElementById('live');
+  if (!el) return;
+  const text = { live: 'Live', reconnecting: 'Reconnecting…', local: 'Not shared' }[status];
+  el.className = `live live-${status}`;
+  el.textContent = text;
+  el.title = status === 'local' ? 'No sync server: records stay in this browser. Start scripts/server.py to share with the phone.' : 'Changes from the phone app appear here in real time.';
+}
+
+// Something changed on another device: show it, flash the fields and mark the updated advice.
+function onRemote(next) {
+  const s = app.state;
+  const knownEvents = new Set(s.captured.map((e) => e.id));
+  const knownNotes = new Set((s.notes || []).map((n) => n.id));
+  const newEvents = (next.captured || []).filter((e) => !knownEvents.has(e.id) && e.client !== CLIENT);
+  const newNotes = (next.notes || []).filter((n) => !knownNotes.has(n.id) && n.client !== CLIENT);
+  previousTitles = currentTitles();
+  applyShared(next);
+  const fields = [...newEvents.map((e) => e.parcel), ...newNotes.map((n) => n.target).filter((t) => t && t !== 'farm')];
+  s.ui.flash = [...new Set(fields)];
+  render();
+  const from = (x) => (x.device === 'phone' ? 'phone' : 'another screen');
+  if (newEvents.length) {
+    const e = newEvents[0];
+    toast(`New from ${from(e)}: ${e.type} on ${new Set(newEvents.map((x) => x.parcel)).size} field(s). Advice updated.`);
+  } else if (newNotes.length) {
+    const n = newNotes[0];
+    toast(`New note from ${from(n)}${n.target !== 'farm' ? ` on ${shortId(n.target)}` : ''}${n.photo ? ' with photo' : ''}. Advice updated.`);
+  }
+  setTimeout(() => { s.ui.flash = []; previousTitles = null; }, 4000);
 }
 
 function toast(message) {
@@ -66,14 +94,17 @@ function render() {
   main.innerHTML = VIEWS[s.ui.view](s);
   const drawer = document.getElementById('drawer');
   if (s.ui.parcel) {
-    drawer.innerHTML = fieldDrawer(s);
+    // Do not wipe a note the farmer is typing when a live update arrives.
+    const typing = drawer.classList.contains('is-open') && document.activeElement?.closest?.('[data-note-form]') && drawer.dataset.parcel === s.ui.parcel;
+    if (!typing) drawer.innerHTML = fieldDrawer(s);
+    drawer.dataset.parcel = s.ui.parcel;
     drawer.classList.add('is-open');
   } else {
     drawer.classList.remove('is-open');
   }
   sizeDrawer();
   document.getElementById('log-count').textContent = s.captured.length ? `${s.captured.length} logged` : '';
-  document.getElementById('reset').hidden = !s.captured.length;
+  document.getElementById('reset').hidden = !s.captured.length && !(s.notes || []).length;
   // After a new record, mark the advice that changed.
   if (previousTitles) {
     document.querySelectorAll('.rec').forEach((el) => {
@@ -88,16 +119,63 @@ function currentTitles() {
   return new Set([...holder.querySelectorAll('.rec h4')].map((h) => h.textContent));
 }
 
-function commit({ events, adjust, flash, message }) {
+async function commit({ events, adjust, flash, message }) {
   const s = app.state;
   previousTitles = currentTitles();
-  s.captured.push(...events);
-  for (const [id, delta] of Object.entries(adjust)) s.stockAdjust[id] = (s.stockAdjust[id] || 0) + delta;
+  try {
+    applyShared(await sync.addRecords(events.map((e) => ({ ...e, device: app.device, client: CLIENT })), adjust));
+  } catch (err) {
+    toast(`Not saved: ${err.message}`);
+    return;
+  }
   s.ui.flash = flash;
-  persist();
   render();
   toast(message);
   setTimeout(() => { s.ui.flash = []; previousTitles = null; }, 4000);
+}
+
+async function saveNote(form) {
+  const s = app.state;
+  const text = form.text.value.trim();
+  const tags = [...form.querySelectorAll('input[name="tags"]:checked')].map((x) => x.value);
+  const file = form.photo.files[0];
+  if (!text && !file) { toast('Write something or add a photo first.'); return; }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const photo = file ? await resizePhoto(file) : null;
+    previousTitles = currentTitles();
+    applyShared(await sync.addNote({
+      target: form.dataset.noteForm, date: today(s), text, tags, photo, device: 'web', channel: 'text', client: CLIENT,
+    }));
+    s.ui.flash = form.dataset.noteForm !== 'farm' ? [form.dataset.noteForm] : [];
+    render();
+    toast('Note saved. The assistant has read it.');
+    setTimeout(() => { s.ui.flash = []; previousTitles = null; }, 4000);
+  } catch (err) {
+    button.disabled = false;
+    toast(`Note not saved: ${err.message}`);
+  }
+}
+
+async function showPhoneLink() {
+  const panel = document.getElementById('phone-panel');
+  if (!panel.hidden) { panel.hidden = true; return; }
+  const info = sync ? await sync.info() : null;
+  let body;
+  if (!info) {
+    body = '<p>The sync server is not running, so the phone cannot connect.</p><p>Start it with <code>python3 scripts/server.py --lan</code> and reload this page.</p>';
+  } else if (!info.phoneUrl) {
+    body = '<p>The server only accepts this Mac. Restart it with <code>python3 scripts/server.py --lan</code> so the iPhone can connect over Wi-Fi.</p>';
+  } else {
+    body = `<p>On the iPhone (same Wi-Fi), open this link in <b>Safari</b>:</p>
+      <div class="phone-url"><code>${esc(info.phoneUrl)}</code><button class="btn ghost" data-action="copy-phone" data-url="${esc(info.phoneUrl)}">Copy</button></div>
+      <ol><li>Send it to the phone (AirDrop, Messages or Notes), or type it in Safari.</li>
+      <li>Tap the Share button, then <b>Add to Home Screen</b>.</li>
+      <li>Open <b>DemetrAg</b> from the home screen. What you record there appears here live.</li></ol>`;
+  }
+  panel.innerHTML = `<div class="phone-head"><b>📱 Phone app</b><button class="icon-btn" data-action="phone" aria-label="Close">✕</button></div>${body}`;
+  panel.hidden = false;
 }
 
 function go(view) {
@@ -175,14 +253,15 @@ function zoomButton(kind, mode) {
 async function start() {
   const [farm, weather, stock, assumptions] = await Promise.all(['farm', 'weather', 'stock', 'assumptions'].map(loadJson));
   const state = {
-    farm, weather, stock, assumptions, captured: [], stockAdjust: {},
+    farm, weather, stock, assumptions, captured: [], stockAdjust: {}, notes: [],
     ui: {
       view: 'home', parcel: null, flash: [], activityFilter: 'all', activitySeason: Number(farm.meta.today.slice(0, 4)), event: null,
       mapView: { crop: null, ndvi: null }, recFilter: { ...EMPTY_FILTER },
     },
   };
-  restore(state);
   app.state = state;
+  sync = await connectSync({ onChange: onRemote, onStatus: setLive });
+  applyShared(sync.state);
   document.getElementById('farm-line').textContent = `${farm.meta.holding_id} · ${farm.meta.region_name} (${farm.meta.country}) · ${fmt(farm.meta.area_ha)} ha · ${farm.meta.parcels} fields`;
   document.getElementById('today').textContent = fmtLongDate(farm.meta.today);
   const capture = createCapture(app);
@@ -197,14 +276,15 @@ async function start() {
     else if (el.dataset.rfCat) { s.ui.recFilter.category = el.dataset.rfCat; render(); }
     else if (el.dataset.action === 'rf-clear') { s.ui.recFilter = { ...EMPTY_FILTER }; render(); }
     else if (el.dataset.action === 'log') capture.open();
+    else if (el.dataset.action === 'phone') showPhoneLink();
+    else if (el.dataset.action === 'copy-phone') {
+      navigator.clipboard?.writeText(el.dataset.url).then(() => toast('Link copied.'), () => toast('Copy failed: select the link instead.'));
+    }
     else if (el.dataset.action === 'close-drawer') { s.ui.parcel = null; render(); }
     else if (el.dataset.action === 'reset') {
-      if (window.confirm('Remove the activities logged in this demo and restore the starting stock?')) {
-        s.captured = [];
-        s.stockAdjust = {};
-        persist();
-        render();
-        toast('Demo reset to the farm records.');
+      if (window.confirm('Remove the activities and notes logged in this demo (on every device) and restore the starting stock?')) {
+        sync.reset().then((next) => { applyShared(next); render(); toast('Demo reset to the farm records.'); },
+          (err) => toast(`Reset failed: ${err.message}`));
       }
     } else if (el.dataset.view) go(el.dataset.view);
     else if (el.dataset.parcel) { s.ui.parcel = el.dataset.parcel; render(); }
@@ -213,8 +293,19 @@ async function start() {
     else if (el.dataset.event) { s.ui.event = s.ui.event === el.dataset.event ? null : el.dataset.event; render(); }
   });
 
+  document.addEventListener('submit', (ev) => {
+    const form = ev.target.closest('[data-note-form]');
+    if (!form) return;
+    ev.preventDefault();
+    saveNote(form);
+  });
+
   document.addEventListener('change', (ev) => {
     const el = ev.target;
+    if (el.name === 'photo' && el.closest('[data-note-form]')) {
+      el.closest('[data-note-form]').querySelector('.photo-name').textContent = el.files[0] ? el.files[0].name : '';
+      return;
+    }
     if (el.dataset?.rf && !el.closest('#capture')) {
       app.state.ui.recFilter[el.dataset.rf] = el.value;
       render();

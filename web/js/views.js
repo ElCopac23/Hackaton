@@ -1,8 +1,9 @@
 // HTML for every screen. Pure functions of the state.
 import {
   CROPS, TYPE_LABELS, OP_LABELS, esc, fmt, fmtQty, fmtDate, fmtDay, fmtLongDate, fmtMonthDay, fmtDateRuns,
-  badges, cropName, cropColor, weatherIcon, shortId, monthName, mean, sum,
+  badges, cropName, cropColor, weatherIcon, shortId, monthName, mean, sum, photoSrc,
 } from './util.js';
+import { noteInsights, notesFor, noteTopics, NOTE_TAGS } from './notes.js';
 import {
   today, year, parcel, parcelsOfCrop, areaOf, cropsOnFarm, parcelStatus, autumnJobs, workLeft, seasonSummary,
   product, stockLevel, productUsage, lastProductsUsed, lastActivities, allEvents, ndviFor, farmNdvi, eventQty,
@@ -25,7 +26,7 @@ const ICONS = {
 };
 export const icon = (name, cls = 'ico') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
-const KIND = { timing: 'Timing', stock: 'Stock', nitrogen: 'Nitrogen' };
+const KIND = { timing: 'Timing', stock: 'Stock', nitrogen: 'Nitrogen', note: 'From your note' };
 
 function cropChip(crop) {
   return `<span class="crop-chip"><i style="background:${cropColor(crop)}"></i>${esc(cropName(crop))}</span>`;
@@ -43,6 +44,7 @@ export function recCard(r, { index = null, compact = false } = {}) {
       ${r.crop ? cropChip(r.crop) : ''}
     </header>
     <h4>${esc(r.title)}</h4>
+    ${r.photo ? `<img class="rec-photo" src="${esc(photoSrc(r.photo))}" alt="Photo attached to the note" loading="lazy">` : ''}
     <ul class="rec-lines">${r.lines.slice(0, compact ? 3 : 9).map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
     ${r.goodDays ? dayChips(r.goodDays) : ''}
     <footer>${badges(r.sources)}</footer>
@@ -358,7 +360,8 @@ export function lastView(s) {
   const row = (it) => {
     if (it.kind === 'note') {
       return `<div class="tl-item"${it.parcel ? ` data-parcel="${it.parcel}"` : ''}><span class="tl-ico">📝</span>
-        <div class="tl-body"><b>${esc(it.noteKind)}${it.parcel ? ` · ${esc(shortId(it.parcel))}` : ''}</b><span>${esc(it.text)}</span></div>${badges(['simulated'])}</div>`;
+        <div class="tl-body"><b>${esc(it.noteKind)}${it.parcel ? ` · ${esc(shortId(it.parcel))}` : ''}</b><span>${esc(it.text || 'Photo')}</span></div>
+        ${it.photo ? `<img class="tl-photo" src="${esc(photoSrc(it.photo))}" alt="" loading="lazy">` : ''}${badges([it.source === 'captured' ? 'note' : it.source])}</div>`;
     }
     const p = parcel(s, it.parcel);
     return `<div class="tl-item" data-parcel="${it.parcel}"><span class="tl-ico">${TL_ICON[it.type]}</span>
@@ -400,7 +403,7 @@ function filterBar(s, f, shown, total) {
 
 export function recsView(s) {
   const f = s.ui.recFilter;
-  const all = { timing: timingRecs(s), stock: stockRecs(s), nitrogen: nitrogenRecs(s), watch: watchOuts(s) };
+  const all = { timing: timingRecs(s), notes: noteInsights(s), stock: stockRecs(s), nitrogen: nitrogenRecs(s), watch: watchOuts(s) };
   const shown = Object.fromEntries(Object.entries(all).map(([k, list]) => [k, list.filter((r) => matchesFilter(r, f))]));
   const total = sum(Object.values(all).map((l) => l.length));
   const count = sum(Object.values(shown).map((l) => l.length));
@@ -412,6 +415,11 @@ export function recsView(s) {
     <div class="card-head"><h3>Timing: what to do while the weather allows</h3><span>${badges(['forecast', 'records', 'rule'])}</span></div>
     ${workloadBox(s)}
     <div class="rec-grid">${shown.timing.map((r) => recCard(r, { index: all.timing.indexOf(r) + 1 })).join('')}</div>
+  </section>` : '';
+  const notesCard = shown.notes.length ? `
+  <section class="card">
+    <div class="card-head"><h3>From your notes and photos</h3><span>${badges(['note', 'rule'])}</span></div>
+    <div class="rec-grid">${shown.notes.map((r) => recCard(r)).join('')}</div>
   </section>` : '';
   const stockCard = shown.stock.length ? `<div class="card">
       <h3>Stock alerts</h3>
@@ -445,7 +453,7 @@ export function recsView(s) {
   return `
   <section class="view-head"><h2>Recommendations</h2><p class="sub">Rule-based assistant: every advice line shows where its numbers come from. A language model is on the roadmap.</p></section>
   ${filterBar(s, f, count, total)}
-  ${count || fields.length ? `${timingCard}${pair}${watchCard}${fieldsCard}` : '<section class="card"><p class="empty">No recommendations match these filters. <button class="link-btn" data-action="rf-clear">Clear filters</button></p></section>'}`;
+  ${count || fields.length ? `${timingCard}${notesCard}${pair}${watchCard}${fieldsCard}` : '<section class="card"><p class="empty">No recommendations match these filters. <button class="link-btn" data-action="rf-clear">Clear filters</button></p></section>'}`;
 }
 
 // ---------- inventory ----------
@@ -512,6 +520,9 @@ export function fieldDrawer(s) {
     <div class="status-box status-${st.code}"><b>${esc(st.label)}</b><span>${esc(st.detail)}</span></div>
     <h4>What to watch</h4>
     <ul class="watch">${fieldNotes(s, p).map((n) => `<li>${esc(n.text)} ${badges(n.sources)}</li>`).join('')}</ul>
+    <h4>Notes and photos ${badges(['note'])}</h4>
+    <div class="note-list">${notesFor(s, p.id).map(noteItem).join('') || '<p class="muted small">No notes yet. Add one here or from the phone app.</p>'}</div>
+    ${noteForm(p.id, `What did you see on ${shortId(p.id)}?`)}
     <h4>Yield, last ${years.length} seasons (t/ha) ${badges(['records'])}</h4>
     ${barChart({ labels: years.map((y) => `'${String(y).slice(2)}`), values: yields, color: cropColor(p.crop), height: 130, unit: 't/ha', refValue: mean(yields), refLabel: 'avg' })}
     <h4>Nitrogen applied (kg N/ha) ${badges(['records', 'regional'])}</h4>
@@ -525,4 +536,30 @@ export function fieldDrawer(s) {
     <div class="mini-tl">${timeline.map((e) => `<div class="mini-tl-row${e.status === 'planned' ? ' is-planned' : ''}${e.source === 'captured' ? ' is-captured' : ''}">
       <span class="mini-date">${esc(fmtDate(e.date))}</span><span>${TL_ICON[e.type]} ${esc(TYPE_LABELS[e.type])}${e.status === 'planned' ? ' (planned)' : ''}</span><span class="muted">${esc(eventSummary(s, e))}</span></div>`).join('')}</div>
   </div>`;
+}
+
+// ---------- notes and photos (shared with the phone app) ----------
+
+export function noteItem(n) {
+  const topics = noteTopics(n).map((x) => `<span class="topic">${esc(x.label)}</span>`).join('');
+  const when = n.date ? fmtDate(n.date) : '';
+  const who = n.device === 'phone' ? 'phone' : 'farm home';
+  return `<div class="note-item">
+    ${n.photo ? `<a href="${esc(photoSrc(n.photo))}" target="_blank" rel="noopener"><img src="${esc(photoSrc(n.photo))}" alt="Field photo" loading="lazy"></a>` : ''}
+    <div class="note-body"><div class="note-meta">${esc(when)} · ${esc(who)}${n.channel === 'voice' ? ' · 🎙' : ''}</div>
+      ${n.text ? `<div class="note-text">${esc(n.text)}</div>` : ''}
+      ${topics ? `<div class="note-topics">${topics}</div>` : ''}</div>
+  </div>`;
+}
+
+export function noteForm(target, placeholder) {
+  return `<form class="note-form" data-note-form="${esc(target)}">
+    <textarea name="text" rows="2" placeholder="${esc(placeholder)}"></textarea>
+    <div class="note-tags">${NOTE_TAGS.map((t) => `<label class="tag-pick"><input type="checkbox" name="tags" value="${esc(t)}"><span>${esc(t)}</span></label>`).join('')}</div>
+    <div class="note-actions">
+      <label class="btn ghost file-btn">📷 Add photo<input type="file" name="photo" accept="image/*" hidden></label>
+      <span class="photo-name muted small"></span>
+      <button class="btn primary" type="submit">Save note</button>
+    </div>
+  </form>`;
 }
